@@ -30,7 +30,7 @@ moodle/
 volumes/
 
 # Backups (optional - comenta si quieres subir backups)
-backup/
+#backup/
 
 # Environment files with sensitive data
 .env
