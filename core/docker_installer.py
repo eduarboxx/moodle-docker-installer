@@ -18,20 +18,32 @@ class DockerInstaller:
     def is_installed(self):
         """Verifica si Docker esta instalado"""
         try:
+            # Verificar Docker
             result = subprocess.run(
                 ['docker', '--version'],
                 capture_output=True,
                 text=True
             )
-            if result.returncode == 0:
-                # Verificar Docker Compose tambien
-                result_compose = subprocess.run(
-                    ['docker-compose', '--version'],
-                    capture_output=True,
-                    text=True
-                )
-                return result_compose.returncode == 0
-            return False
+            if result.returncode != 0:
+                return False
+
+            # Verificar Docker Compose (plugin moderno)
+            result_compose = subprocess.run(
+                ['docker', 'compose', 'version'],
+                capture_output=True,
+                text=True
+            )
+            if result_compose.returncode == 0:
+                return True
+
+            # Intentar con docker-compose standalone (versiones antiguas)
+            result_compose_old = subprocess.run(
+                ['docker-compose', '--version'],
+                capture_output=True,
+                text=True
+            )
+            return result_compose_old.returncode == 0
+
         except FileNotFoundError:
             return False
     
