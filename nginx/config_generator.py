@@ -46,8 +46,33 @@ class NginxConfigGenerator:
             print(f"Error generando configuraciones Nginx: {str(e)}")
             return False
 
+    def enable_environment_config(self, environment):
+        """Habilita la configuracion de Nginx para un ambiente"""
+        try:
+            config_dir = os.path.join(self.nginx_path, 'conf.d')
+            disabled_path = os.path.join(config_dir, f'{environment}.conf.disabled')
+            enabled_path = os.path.join(config_dir, f'{environment}.conf')
+
+            # Si existe el archivo disabled, renombrarlo a .conf
+            if os.path.exists(disabled_path):
+                os.rename(disabled_path, enabled_path)
+                print(f"Configuracion {environment} habilitada")
+                return True
+            elif os.path.exists(enabled_path):
+                print(f"Configuracion {environment} ya esta habilitada")
+                return True
+            else:
+                print(f"Advertencia: No se encontro configuracion para {environment}")
+                return False
+
+        except Exception as e:
+            print(f"Error habilitando configuracion {environment}: {str(e)}")
+            return False
+
     def setup_ssl_for_environment(self, environment):
         """Configura SSL para un ambiente especifico despues de levantar contenedores"""
+        import subprocess
+
         try:
             ssl_manager = SSLManager(self.settings)
 
@@ -57,12 +82,27 @@ class NginxConfigGenerator:
             # Generar archivo de configuracion de Moodle para SSL
             ssl_manager.create_moodle_config_file(environment)
 
+            # Habilitar configuracion de Nginx para este ambiente
+            self.enable_environment_config(environment)
+
+            # Recargar Nginx para aplicar la nueva configuracion
+            print("Recargando Nginx...")
+            try:
+                subprocess.run(['docker', 'exec', 'nginx', 'nginx', '-s', 'reload'],
+                             check=True, capture_output=True)
+                print("Nginx recargado exitosamente")
+            except subprocess.CalledProcessError as e:
+                print(f"Advertencia: No se pudo recargar Nginx: {e}")
+                print("Reiniciando contenedor Nginx...")
+                subprocess.run(['docker', 'restart', 'nginx'], check=True)
+                print("Nginx reiniciado exitosamente")
+
             return True
         except Exception as e:
             print(f"Error configurando SSL para {environment}: {str(e)}")
             return False
     
-    def generate_testing_config(self):
+    def generate_testing_config(self, enabled=False):
         """Genera configuracion de Nginx para Testing"""
         test_url = self.settings.get_env_var('TEST_URL', 'https://test.moodle.local')
 
@@ -117,19 +157,22 @@ server {{
 }}
 """
 
-        # Crear archivo de configuración directamente en conf.d
+        # Crear archivo de configuración (disabled por defecto si enabled=False)
         config_dir = os.path.join(self.nginx_path, 'conf.d')
         os.makedirs(config_dir, exist_ok=True)
 
-        config_path = os.path.join(config_dir, 'testing.conf')
+        # Generar como .disabled si no está habilitado
+        extension = '.conf' if enabled else '.conf.disabled'
+        config_path = os.path.join(config_dir, f'testing{extension}')
 
         with open(config_path, 'w') as f:
             f.write(config)
 
-        print(f"Configuracion Testing creada: {config_path}")
+        status = "habilitada" if enabled else "deshabilitada"
+        print(f"Configuracion Testing creada ({status}): {config_path}")
         return True
     
-    def generate_production_config(self):
+    def generate_production_config(self, enabled=False):
         """Genera configuracion de Nginx para Produccion"""
         prod_url = self.settings.get_env_var('PROD_URL', 'https://moodle.local')
 
@@ -184,16 +227,19 @@ server {{
 }}
 """
 
-        # Crear archivo de configuración directamente en conf.d
+        # Crear archivo de configuración (disabled por defecto si enabled=False)
         config_dir = os.path.join(self.nginx_path, 'conf.d')
         os.makedirs(config_dir, exist_ok=True)
 
-        config_path = os.path.join(config_dir, 'production.conf')
+        # Generar como .disabled si no está habilitado
+        extension = '.conf' if enabled else '.conf.disabled'
+        config_path = os.path.join(config_dir, f'production{extension}')
 
         with open(config_path, 'w') as f:
             f.write(config)
 
-        print(f"Configuracion Produccion creada: {config_path}")
+        status = "habilitada" if enabled else "deshabilitada"
+        print(f"Configuracion Produccion creada ({status}): {config_path}")
         return True
     
     def generate_default_config(self):
