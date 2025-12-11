@@ -5,6 +5,13 @@ Instala Docker y Docker Compose en diferentes distribuciones
 
 import subprocess
 import time
+import sys
+from pathlib import Path
+
+# Agregar el directorio raiz al path para imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from utils.docker_compose_wrapper import DockerComposeWrapper
 
 
 class DockerInstaller:
@@ -27,22 +34,8 @@ class DockerInstaller:
             if result.returncode != 0:
                 return False
 
-            # Verificar Docker Compose (plugin moderno)
-            result_compose = subprocess.run(
-                ['docker', 'compose', 'version'],
-                capture_output=True,
-                text=True
-            )
-            if result_compose.returncode == 0:
-                return True
-
-            # Intentar con docker-compose standalone (versiones antiguas)
-            result_compose_old = subprocess.run(
-                ['docker-compose', '--version'],
-                capture_output=True,
-                text=True
-            )
-            return result_compose_old.returncode == 0
+            # Verificar Docker Compose usando el wrapper
+            return DockerComposeWrapper.is_compose_available()
 
         except FileNotFoundError:
             return False
@@ -155,6 +148,10 @@ class DockerInstaller:
         if self.is_installed():
             print("\n" + "=" * 60)
             print("Docker instalado correctamente")
+
+            # Mostrar version de Docker Compose detectada
+            compose_cmd = DockerComposeWrapper.get_compose_command_string()
+            print(f"Docker Compose detectado: {compose_cmd}")
             print("=" * 60)
             return True
         else:

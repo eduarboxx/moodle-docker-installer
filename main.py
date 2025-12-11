@@ -25,6 +25,7 @@ from nginx.config_generator import NginxConfigGenerator
 from config.settings import Settings
 from utils.validator import Validator
 from utils.rollback import RollbackManager
+from utils.docker_compose_wrapper import DockerComposeWrapper
 from backup.backup_manager import BackupManager
 from backup.scheduler import BackupScheduler
 import time
@@ -209,8 +210,6 @@ class MoodleDockerInstaller:
     def _start_environment(self, env_name):
         """Inicia un ambiente especifico"""
         try:
-            import subprocess
-            
             # Map environment to specific services
             services_map = {
                 'testing': 'mysql_testing moodle_testing nginx',
@@ -218,16 +217,19 @@ class MoodleDockerInstaller:
             }
 
             services = services_map.get(env_name, env_name)
-            cmd = f"cd {self.settings.BASE_PATH} && docker-compose up -d {services}"
+            compose_cmd = DockerComposeWrapper.get_compose_command_string()
 
-            self.logger.info(f"Ejecutando: {cmd}")
+            self.logger.info(f"Ejecutando: {compose_cmd} up -d {services}")
             print("Iniciando contenedores Docker...")
-            result = subprocess.run(cmd, shell=True)
+            result = DockerComposeWrapper.run_compose_shell(
+                f"up -d {services}",
+                cwd=self.settings.BASE_PATH
+            )
 
             if result.returncode != 0:
                 self.logger.error("Error al iniciar los contenedores Docker")
                 return False
-                
+
             return True
         except Exception as e:
             self.logger.error(f"Error al iniciar ambiente {env_name}: {str(e)}")
@@ -346,17 +348,15 @@ PROXIMOS PASOS:
     
     def _manage_environment_action(self, env, action):
         """Ejecuta una accion sobre un ambiente"""
-        import subprocess
-        
         actions_map = {
             'up': 'up -d',
             'down': 'down',
             'restart': 'restart'
         }
-        
+
         try:
             self.logger.info(f"Ejecutando {action} en {env}...")
-            
+
             # Map environment to specific services if necessary
             services_map = {
                 'testing': 'mysql_testing moodle_testing',
@@ -367,10 +367,14 @@ PROXIMOS PASOS:
             # Si es 'up', incluir nginx; si es 'down', solo detener servicios del ambiente
             if action == 'up':
                 target += ' nginx'
-            
-            cmd = f"cd {self.settings.BASE_PATH} && docker-compose {actions_map[action]} {target}"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            
+
+            result = DockerComposeWrapper.run_compose_shell(
+                f"{actions_map[action]} {target}",
+                cwd=self.settings.BASE_PATH,
+                capture_output=True,
+                text=True
+            )
+
             if result.returncode == 0:
                 self.logger.success(f"Accion {action} ejecutada exitosamente en {env}")
             else:
@@ -380,11 +384,13 @@ PROXIMOS PASOS:
     
     def _show_services_status(self):
         """Muestra el estado de los servicios"""
-        import subprocess
-        
         try:
-            cmd = f"cd {self.settings.BASE_PATH} && docker-compose ps"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = DockerComposeWrapper.run_compose_shell(
+                "ps",
+                cwd=self.settings.BASE_PATH,
+                capture_output=True,
+                text=True
+            )
             print("\n" + result.stdout)
         except Exception as e:
             self.logger.error(f"Error al obtener estado: {str(e)}")
@@ -436,14 +442,14 @@ PROXIMOS PASOS:
     
     def _show_logs(self, env, service=None):
         """Muestra logs de un servicio"""
-        import subprocess
-        
         try:
             service_flag = f" {service}" if service else ""
-            cmd = f"cd {self.settings.BASE_PATH} && docker-compose logs --tail=100 -f{service_flag}"
-            
+
             print(f"\nMostrando logs (Ctrl+C para salir)...\n")
-            subprocess.run(cmd, shell=True)
+            DockerComposeWrapper.run_compose_shell(
+                f"logs --tail=100 -f{service_flag}",
+                cwd=self.settings.BASE_PATH
+            )
         except KeyboardInterrupt:
             print("\n")
         except Exception as e:
@@ -817,6 +823,7 @@ PROXIMOS PASOS:
     def _uninstall_environment(self, env):
         """Desinstala un ambiente especifico"""
         import subprocess
+        import shutil
         from backup.backup_manager import BackupManager
 
         env_name = env.upper()
@@ -859,14 +866,16 @@ PROXIMOS PASOS:
         try:
             # Detener y eliminar contenedores
             self.logger.info(f"Deteniendo contenedores de {env}...")
-            subprocess.run(
-                f"cd {self.settings.BASE_PATH} && docker-compose stop mysql_{env} moodle_{env}",
-                shell=True, capture_output=True
+            DockerComposeWrapper.run_compose_shell(
+                f"stop mysql_{env} moodle_{env}",
+                cwd=self.settings.BASE_PATH,
+                capture_output=True
             )
 
-            subprocess.run(
-                f"cd {self.settings.BASE_PATH} && docker-compose rm -f mysql_{env} moodle_{env}",
-                shell=True, capture_output=True
+            DockerComposeWrapper.run_compose_shell(
+                f"rm -f mysql_{env} moodle_{env}",
+                cwd=self.settings.BASE_PATH,
+                capture_output=True
             )
 
             # Eliminar volumenes
@@ -876,7 +885,6 @@ PROXIMOS PASOS:
 
             # Eliminar directorios locales
             self.logger.info(f"Eliminando directorios de {env}...")
-            import shutil
             env_dir = os.path.join(self.settings.BASE_PATH, env)
             if os.path.exists(env_dir):
                 shutil.rmtree(env_dir)
@@ -892,7 +900,7 @@ PROXIMOS PASOS:
 
     def _uninstall_complete(self):
         """Desinstala toda la infraestructura"""
-        import subprocess
+        import shutil
         from backup.backup_manager import BackupManager
 
         print("\n" + "="*60)
@@ -928,13 +936,12 @@ PROXIMOS PASOS:
 
         try:
             self.logger.info("Deteniendo todos los contenedores...")
-            subprocess.run(
-                f"cd {self.settings.BASE_PATH} && docker-compose down -v",
-                shell=True
+            DockerComposeWrapper.run_compose_shell(
+                "down -v",
+                cwd=self.settings.BASE_PATH
             )
 
             self.logger.info("Eliminando estructura completa...")
-            import shutil
             if os.path.exists(self.settings.BASE_PATH):
                 shutil.rmtree(self.settings.BASE_PATH)
 

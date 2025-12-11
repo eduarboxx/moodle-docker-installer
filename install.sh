@@ -24,6 +24,32 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
+# Instalar herramientas necesarias: git y wget
+echo "Verificando herramientas necesarias..."
+TOOLS_TO_INSTALL=""
+
+if ! command -v git &> /dev/null; then
+    TOOLS_TO_INSTALL="$TOOLS_TO_INSTALL git"
+fi
+
+if ! command -v wget &> /dev/null; then
+    TOOLS_TO_INSTALL="$TOOLS_TO_INSTALL wget"
+fi
+
+if [ -n "$TOOLS_TO_INSTALL" ]; then
+    echo "Instalando herramientas:$TOOLS_TO_INSTALL"
+    if command -v apt-get &> /dev/null; then
+        apt-get update
+        apt-get install -y $TOOLS_TO_INSTALL
+    elif command -v dnf &> /dev/null; then
+        dnf install -y $TOOLS_TO_INSTALL
+    elif command -v pacman &> /dev/null; then
+        pacman -S --noconfirm $TOOLS_TO_INSTALL
+    fi
+else
+    echo "Git y wget ya estan instalados"
+fi
+
 # Instalar pip si no existe
 if ! command -v pip3 &> /dev/null; then
     echo "Instalando pip3..."
