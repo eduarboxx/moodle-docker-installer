@@ -2,6 +2,21 @@
 
 Este documento explica la configuracion de certificados SSL y como solucionar problemas de contenido mixto (mixed content).
 
+## Flujo de Instalacion SSL
+
+**IMPORTANTE**: El orden de instalación ha sido optimizado:
+
+1. **Primero**: Se levantan los contenedores Docker del ambiente seleccionado
+2. **Después**: Se configuran los certificados SSL automáticamente para ese ambiente
+3. **Solo se configuran certificados** para los ambientes que realmente se van a usar
+
+### Ventajas de este Enfoque
+
+- No se generan certificados innecesarios
+- Los certificados se crean solo cuando hay contenedores corriendo
+- Si solo usas Testing, no se genera certificado para Producción (y viceversa)
+- SSL se configura automáticamente al levantar un ambiente por primera vez
+
 ## Problema de Contenido Mixto
 
 El error "Se ha bloqueado la carga del contenido activo mixto" ocurre cuando:
@@ -96,56 +111,69 @@ Despues de la instalacion encontraras:
 /opt/docker-project/
 ├── nginx/
 │   └── ssl/
-│       ├── testing.crt       # Certificado testing
+│       ├── testing.crt       # Certificado testing (solo si levantaste Testing)
 │       ├── testing.key       # Clave privada testing
-│       ├── production.crt    # Certificado produccion
+│       ├── production.crt    # Certificado produccion (solo si levantaste Produccion)
 │       └── production.key    # Clave privada produccion
 ├── testing/
 │   └── moodle_config/
-│       └── ssl_config.php    # Config SSL para testing
+│       └── ssl_config.php    # Config SSL para testing (solo si levantaste Testing)
 └── production/
     └── moodle_config/
-        └── ssl_config.php    # Config SSL para produccion
+        └── ssl_config.php    # Config SSL para produccion (solo si levantaste Produccion)
 ```
+
+**Nota**: Los archivos de certificados y configuración SSL solo se crean para los ambientes que realmente levantas.
 
 ## Aplicar Configuracion SSL a Moodle
 
-Despues de la instalacion de Moodle, debes agregar la configuracion SSL:
+**¡AHORA ES AUTOMÁTICO!** El instalador aplica automáticamente la configuración SSL a Moodle cuando:
 
-### Metodo 1: Manual
+1. Levantas un ambiente por primera vez
+2. Moodle ya está instalado en el contenedor
+
+### Qué hace automáticamente
+
+El instalador (`main.py`):
+- Detecta si el contenedor está corriendo
+- Verifica si Moodle está instalado (existe `/var/www/html/config.php`)
+- Comprueba si SSL ya está configurado (busca `sslproxy` en config.php)
+- Si no está configurado, aplica automáticamente la configuración SSL
+- Limpia el cache de Moodle
+- Reinicia el contenedor
+
+### Aplicación Manual (solo si es necesario)
+
+Si por alguna razón necesitas aplicar la configuración SSL manualmente:
+
+#### Opción 1: Script Automatizado
+
+Usa el script `apply_ssl_config.sh`:
+
+```bash
+# Para producción
+sudo bash utils/apply_ssl_config.sh production
+
+# Para testing
+sudo bash utils/apply_ssl_config.sh testing
+```
+
+#### Opción 2: Manual
 
 1. Acceder al contenedor de Moodle:
 ```bash
 docker exec -it moodle_production bash
 ```
 
-2. Editar el archivo config.php de Moodle:
+2. Agregar configuración SSL al config.php:
 ```bash
-nano /var/www/html/config.php
+cat /opt/docker-project/production/moodle_config/ssl_config.php >> /var/www/html/config.php
 ```
 
-3. Agregar las lineas del archivo ssl_config.php generado
+3. Salir y reiniciar:
 ```bash
-cat /opt/docker-project/production/moodle_config/ssl_config.php
-```
-
-4. Reiniciar el contenedor:
-```bash
+exit
 docker restart moodle_production
-```
-
-### Metodo 2: Script Automatico (Recomendado)
-
-Crear un script que se ejecute durante el arranque del contenedor:
-
-1. Modificar el Dockerfile de Moodle para incluir:
-```dockerfile
-COPY production/moodle_config/ssl_config.php /etc/moodle/ssl_config.php
-```
-
-2. En el entrypoint del contenedor, agregar al config.php:
-```bash
-cat /etc/moodle/ssl_config.php >> /var/www/html/config.php
 ```
 
 ## Solucion de Problemas

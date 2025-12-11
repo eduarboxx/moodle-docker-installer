@@ -154,7 +154,7 @@ class MoodleDockerInstaller:
                 return False
             self.logger.success("docker-compose.yml generado")
             
-            # 9. Generar configuraciones Nginx
+            # 9. Generar configuraciones Nginx (sin SSL todavia)
             self.logger.info("Generando configuraciones Nginx...")
             nginx_gen = NginxConfigGenerator(self.settings)
             if not nginx_gen.generate_all():
@@ -162,35 +162,39 @@ class MoodleDockerInstaller:
                 return False
             self.logger.success("Configuraciones Nginx generadas")
 
-            # 10. Generar certificados SSL autofirmados
-            self.logger.info("Generando certificados SSL autofirmados...")
-            if not nginx_gen.generate_self_signed_certs():
-                self.logger.error("Error al generar certificados SSL")
-                return False
-            self.logger.success("Certificados SSL generados")
-            
-            # 11. Preguntar que ambiente levantar
+            # 10. Preguntar que ambiente levantar
             print("\nQue ambiente deseas levantar?")
             print("1. Testing")
             print("2. Produccion")
             print("3. Ambos")
             print("4. Ninguno (solo instalar)")
-            
+
             choice = input("\nSelecciona una opcion (1-4): ").strip()
-            
+
+            environments_to_start = []
             if choice in ['1', '3']:
-                self.logger.info("Levantando ambiente Testing...")
-                if not self._start_environment('testing'):
-                    self.logger.error("Error al levantar ambiente Testing")
-                else:
-                    self.logger.success("Ambiente Testing iniciado")
-                    
+                environments_to_start.append('testing')
             if choice in ['2', '3']:
-                self.logger.info("Levantando ambiente Produccion...")
-                if not self._start_environment('production'):
-                    self.logger.error("Error al levantar ambiente Produccion")
+                environments_to_start.append('production')
+
+            # 11. Levantar contenedores seleccionados
+            for env in environments_to_start:
+                self.logger.info(f"Levantando ambiente {env.capitalize()}...")
+                if not self._start_environment(env):
+                    self.logger.error(f"Error al levantar ambiente {env.capitalize()}")
                 else:
-                    self.logger.success("Ambiente Produccion iniciado")
+                    self.logger.success(f"Ambiente {env.capitalize()} iniciado")
+
+            # 12. Configurar SSL solo para los ambientes levantados
+            for env in environments_to_start:
+                self.logger.info(f"Configurando SSL para {env.capitalize()}...")
+                if not nginx_gen.setup_ssl_for_environment(env):
+                    self.logger.error(f"Error al configurar SSL para {env.capitalize()}")
+                else:
+                    self.logger.success(f"SSL configurado para {env.capitalize()}")
+
+                    # Aplicar configuracion SSL a Moodle si el contenedor esta corriendo
+                    self._apply_ssl_to_moodle(env)
             
             # Configurar backups automaticos
             self._setup_automatic_backups()
@@ -233,6 +237,95 @@ class MoodleDockerInstaller:
             return True
         except Exception as e:
             self.logger.error(f"Error al iniciar ambiente {env_name}: {str(e)}")
+            return False
+
+    def _apply_ssl_to_moodle(self, environment):
+        """Aplica configuracion SSL a Moodle si ya esta instalado"""
+        import subprocess
+
+        try:
+            container_name = f"moodle_{environment}"
+            ssl_config_file = os.path.join(
+                self.settings.BASE_PATH,
+                environment,
+                'moodle_config',
+                'ssl_config.php'
+            )
+
+            # Verificar que el archivo de configuracion SSL exista
+            if not os.path.exists(ssl_config_file):
+                self.logger.warning(f"No se encontro archivo de configuracion SSL para {environment}")
+                return False
+
+            # Verificar que el contenedor este corriendo
+            check_container = subprocess.run(
+                ['docker', 'ps', '--filter', f'name={container_name}', '--format', '{{.Names}}'],
+                capture_output=True,
+                text=True
+            )
+
+            if container_name not in check_container.stdout:
+                self.logger.warning(f"Contenedor {container_name} no esta corriendo")
+                return False
+
+            # Verificar si Moodle ya esta instalado
+            check_config = subprocess.run(
+                ['docker', 'exec', container_name, 'test', '-f', '/var/www/html/config.php'],
+                capture_output=True
+            )
+
+            if check_config.returncode != 0:
+                # Moodle aun no esta instalado, la configuracion se aplicara durante la instalacion
+                self.logger.info(f"Moodle en {environment} aun no esta instalado")
+                self.logger.info("La configuracion SSL se aplicara automaticamente durante la instalacion")
+                return True
+
+            # Verificar si la configuracion SSL ya esta aplicada
+            check_ssl = subprocess.run(
+                ['docker', 'exec', container_name, 'grep', '-q', 'sslproxy', '/var/www/html/config.php'],
+                capture_output=True
+            )
+
+            if check_ssl.returncode == 0:
+                self.logger.info(f"Configuracion SSL ya esta aplicada en {environment}")
+                return True
+
+            # Aplicar configuracion SSL
+            self.logger.info(f"Aplicando configuracion SSL a Moodle en {environment}...")
+
+            # Copiar archivo al contenedor
+            subprocess.run(
+                ['docker', 'cp', ssl_config_file, f'{container_name}:/tmp/ssl_config.php'],
+                check=True
+            )
+
+            # Agregar configuracion al config.php
+            subprocess.run(
+                ['docker', 'exec', container_name, 'bash', '-c',
+                 'cat /tmp/ssl_config.php >> /var/www/html/config.php'],
+                check=True
+            )
+
+            # Eliminar archivo temporal
+            subprocess.run(
+                ['docker', 'exec', container_name, 'rm', '/tmp/ssl_config.php'],
+                check=True
+            )
+
+            # Limpiar cache de Moodle
+            subprocess.run(
+                ['docker', 'exec', container_name, 'php', '/var/www/html/admin/cli/purge_caches.php'],
+                capture_output=True
+            )
+
+            # Reiniciar contenedor para aplicar cambios
+            subprocess.run(['docker', 'restart', container_name], capture_output=True)
+
+            self.logger.success(f"Configuracion SSL aplicada a Moodle en {environment}")
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"Error al aplicar SSL a Moodle en {environment}: {str(e)}")
             return False
     
     def _show_installation_summary(self):
@@ -377,10 +470,46 @@ PROXIMOS PASOS:
 
             if result.returncode == 0:
                 self.logger.success(f"Accion {action} ejecutada exitosamente en {env}")
+
+                # Si es 'up', verificar y configurar SSL si es necesario
+                if action == 'up':
+                    self._check_and_setup_ssl(env)
             else:
                 self.logger.error(f"Error al ejecutar {action} en {env}: {result.stderr}")
         except Exception as e:
             self.logger.error(f"Error: {str(e)}")
+
+    def _check_and_setup_ssl(self, environment):
+        """Verifica y configura SSL si no existe para un ambiente"""
+        import os
+
+        try:
+            ssl_cert_path = os.path.join(
+                self.settings.NGINX_PATH,
+                'ssl',
+                f'{environment}.crt'
+            )
+
+            # Verificar si ya existe certificado SSL
+            if os.path.exists(ssl_cert_path):
+                self.logger.info(f"SSL ya configurado para {environment}")
+                return
+
+            # Configurar SSL
+            self.logger.info(f"Configurando SSL para {environment}...")
+            from nginx.config_generator import NginxConfigGenerator
+            nginx_gen = NginxConfigGenerator(self.settings)
+
+            if nginx_gen.setup_ssl_for_environment(environment):
+                self.logger.success(f"SSL configurado exitosamente para {environment}")
+
+                # Aplicar configuracion SSL a Moodle
+                self._apply_ssl_to_moodle(environment)
+            else:
+                self.logger.warning(f"No se pudo configurar SSL para {environment}")
+
+        except Exception as e:
+            self.logger.warning(f"Error verificando SSL para {environment}: {str(e)}")
     
     def _show_services_status(self):
         """Muestra el estado de los servicios"""

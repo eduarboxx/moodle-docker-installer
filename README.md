@@ -306,7 +306,18 @@ sudo python3 main.py
 
 ### Certificados SSL
 
-El instalador configura automaticamente certificados SSL para evitar problemas de contenido mixto.
+**IMPORTANTE**: Los certificados SSL se configuran **automáticamente después de levantar los contenedores**, solo para los ambientes que selecciones.
+
+#### Flujo de Instalación SSL
+
+1. **Durante la instalación inicial**:
+   - Se levantan primero los contenedores Docker
+   - Luego se configura SSL automáticamente para cada ambiente levantado
+   - Solo se generan certificados para los ambientes que selecciones (Testing, Producción, o ambos)
+
+2. **Al levantar un ambiente posteriormente**:
+   - Si el ambiente no tiene SSL configurado, se configurará automáticamente
+   - Si ya tiene SSL, se mantiene la configuración existente
 
 #### Tipos de Certificados Soportados
 
@@ -319,7 +330,7 @@ El instalador configura automaticamente certificados SSL para evitar problemas d
    - Certificados gratuitos y validos
    - Renovacion automatica
    - Requiere dominio publico
-   - **Nota**: En Rocky Linux/RHEL requiere instalacion manual de certbot. Ver [utils/CERTBOT_ROCKY_LINUX.md](utils/CERTBOT_ROCKY_LINUX.md)
+   - **Nota**: En Rocky Linux/RHEL, `install.sh` habilita automáticamente el repositorio EPEL. Ver [utils/CERTBOT_ROCKY_LINUX.md](utils/CERTBOT_ROCKY_LINUX.md)
 
 3. **Personalizados**
    - Para certificados comprados o propios
@@ -345,16 +356,17 @@ SSL_FORCE_HTTPS='true'
 Se ha bloqueado la carga del contenido activo mixto "http://..."
 ```
 
-**Solucion**: El instalador configura automaticamente Moodle para forzar HTTPS. Si el error persiste:
+**Solucion**: El instalador configura automaticamente Moodle para forzar HTTPS y aplica la configuración SSL automáticamente. Si el error persiste:
 
 1. Verificar que la URL en .env use `https://`
-2. Aplicar la configuracion SSL al config.php de Moodle:
+2. La configuración SSL se aplica automáticamente al levantar el ambiente
+3. Para verificar la configuración SSL aplicada:
    ```bash
    # Ver la configuracion generada
    cat /opt/docker-project/production/moodle_config/ssl_config.php
 
-   # Agregarla al config.php de Moodle
-   docker exec -it moodle_production nano /var/www/html/config.php
+   # Verificar si está en config.php de Moodle
+   docker exec moodle_production grep -A 5 "sslproxy" /var/www/html/config.php
    ```
 
 3. Limpiar cache de Moodle:

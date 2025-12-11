@@ -34,24 +34,32 @@ class NginxConfigGenerator:
         return not url or url in default_urls
 
     def generate_all(self):
-        """Genera todas las configuraciones de Nginx"""
+        """Genera todas las configuraciones de Nginx (sin SSL)"""
         try:
-            # Primero configurar certificados SSL
-            ssl_manager = SSLManager(self.settings)
-            ssl_manager.setup_certificates()
-
-            # Luego generar configuraciones
+            # Generar configuraciones basicas de Nginx
             self.generate_testing_config()
             self.generate_production_config()
             self.generate_default_config()
 
-            # Generar archivos de configuracion de Moodle para SSL
-            ssl_manager.create_moodle_config_file('testing')
-            ssl_manager.create_moodle_config_file('production')
-
             return True
         except Exception as e:
             print(f"Error generando configuraciones Nginx: {str(e)}")
+            return False
+
+    def setup_ssl_for_environment(self, environment):
+        """Configura SSL para un ambiente especifico despues de levantar contenedores"""
+        try:
+            ssl_manager = SSLManager(self.settings)
+
+            # Configurar certificado SSL para este ambiente
+            ssl_manager.setup_certificates_for_env(environment)
+
+            # Generar archivo de configuracion de Moodle para SSL
+            ssl_manager.create_moodle_config_file(environment)
+
+            return True
+        except Exception as e:
+            print(f"Error configurando SSL para {environment}: {str(e)}")
             return False
     
     def generate_testing_config(self):

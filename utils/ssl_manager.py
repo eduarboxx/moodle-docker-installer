@@ -28,6 +28,14 @@ class SSLManager:
 
         return True
 
+    def setup_certificates_for_env(self, environment):
+        """Configura certificados SSL para un ambiente especifico"""
+        print("\n" + "="*60)
+        print(f"CONFIGURACION DE CERTIFICADOS SSL PARA {environment.upper()}")
+        print("="*60)
+
+        return self._setup_environment_cert(environment)
+
     def _setup_environment_cert(self, env):
         """Configura certificado SSL para un ambiente especifico"""
         env_prefix = 'TEST' if env == 'testing' else 'PROD'
