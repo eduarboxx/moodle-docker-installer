@@ -115,35 +115,40 @@ class DockerInstaller:
     def _execute_commands(self, commands):
         """Ejecuta una lista de comandos"""
         for cmd in commands:
-            print(f"Ejecutando: {cmd[:60]}...")
+            print(f"\nEjecutando: {cmd[:60]}...")
+            print("-" * 60)
             try:
                 result = subprocess.run(
                     cmd,
                     shell=True,
-                    capture_output=True,
                     text=True,
                     timeout=300
                 )
-                
+
                 if result.returncode != 0:
-                    print(f"Error: {result.stderr}")
+                    print(f"\n[ERROR] El comando falló con código: {result.returncode}")
                     return False
-                    
+
+                print("-" * 60)
                 time.sleep(1)
             except subprocess.TimeoutExpired:
-                print(f"Timeout ejecutando: {cmd}")
+                print(f"\n[ERROR] Timeout ejecutando: {cmd}")
                 return False
             except Exception as e:
-                print(f"Error: {str(e)}")
+                print(f"\n[ERROR] Excepción: {str(e)}")
                 return False
-        
+
         # Verificar instalacion
         time.sleep(3)
         if self.is_installed():
+            print("\n" + "=" * 60)
             print("Docker instalado correctamente")
+            print("=" * 60)
             return True
         else:
+            print("\n" + "=" * 60)
             print("Docker no se instalo correctamente")
+            print("=" * 60)
             return False
     
     def add_user_to_docker_group(self, username):
