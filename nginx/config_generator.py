@@ -5,6 +5,7 @@ Genera configuraciones de Nginx para Testing y Produccion
 
 import os
 import socket
+from utils.ssl_manager import SSLManager
 
 
 class NginxConfigGenerator:
@@ -35,9 +36,19 @@ class NginxConfigGenerator:
     def generate_all(self):
         """Genera todas las configuraciones de Nginx"""
         try:
+            # Primero configurar certificados SSL
+            ssl_manager = SSLManager(self.settings)
+            ssl_manager.setup_certificates()
+
+            # Luego generar configuraciones
             self.generate_testing_config()
             self.generate_production_config()
             self.generate_default_config()
+
+            # Generar archivos de configuracion de Moodle para SSL
+            ssl_manager.create_moodle_config_file('testing')
+            ssl_manager.create_moodle_config_file('production')
+
             return True
         except Exception as e:
             print(f"Error generando configuraciones Nginx: {str(e)}")
@@ -184,32 +195,6 @@ server {{
         return True
     
     def generate_self_signed_certs(self):
-        """Genera certificados SSL autofirmados"""
-        import subprocess
-        
-        ssl_path = os.path.join(self.nginx_path, 'ssl')
-        os.makedirs(ssl_path, exist_ok=True)
-        
-        environments = ['testing', 'production']
-        
-        for env in environments:
-            cert_file = os.path.join(ssl_path, f'{env}.crt')
-            key_file = os.path.join(ssl_path, f'{env}.key')
-            
-            if os.path.exists(cert_file) and os.path.exists(key_file):
-                print(f"Certificados SSL para {env} ya existen")
-                continue
-            
-            try:
-                cmd = f"""openssl req -x509 -nodes -days 365 -newkey rsa:2048 \\
-                    -keyout {key_file} \\
-                    -out {cert_file} \\
-                    -subj "/C=CL/ST=Chile/L=Santiago/O=Moodle/CN={env}.moodle.local"
-                """
-                subprocess.run(cmd, shell=True, check=True, capture_output=True)
-                print(f"Certificado SSL generado para {env}")
-            except Exception as e:
-                print(f"Error generando certificado SSL para {env}: {str(e)}")
-                return False
-        
-        return True
+        """Genera certificados SSL autofirmados (deprecated - usar SSLManager)"""
+        ssl_manager = SSLManager(self.settings)
+        return ssl_manager.setup_certificates()

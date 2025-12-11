@@ -94,7 +94,11 @@ moodle-docker-installer/
     ├── logger.py
     ├── password_generator.py
     ├── validator.py
-    └── rollback.py
+    ├── rollback.py
+    ├── ssl_manager.py           # Gestor de certificados SSL
+    ├── docker_compose_wrapper.py # Wrapper Docker Compose V1/V2
+    ├── DOCKER_COMPOSE_COMPATIBILITY.md
+    └── SSL_CONFIGURATION.md     # Documentacion SSL
 ```
 
 ## Estructura de Instalacion
@@ -301,11 +305,79 @@ sudo python3 main.py
 
 ### Certificados SSL
 
-Por defecto se generan certificados autofirmados. Para usar certificados reales:
+El instalador configura automaticamente certificados SSL para evitar problemas de contenido mixto.
 
-1. Colocar certificados en `/opt/docker-project/nginx/ssl/`
-2. Actualizar rutas en `/opt/docker-project/nginx/conf.d/*.conf`
-3. Reiniciar Nginx: `docker-compose restart nginx`
+#### Tipos de Certificados Soportados
+
+1. **Autofirmados** (por defecto)
+   - Ideales para desarrollo y testing
+   - Se generan automaticamente
+   - Los navegadores mostraran advertencia de seguridad
+
+2. **Let's Encrypt** (produccion)
+   - Certificados gratuitos y validos
+   - Renovacion automatica
+   - Requiere dominio publico
+
+3. **Personalizados**
+   - Para certificados comprados o propios
+   - Se solicitan las rutas durante la instalacion
+
+#### Configuracion en .env
+
+```bash
+# Tipo de certificado SSL
+SSL_CERT_TYPE='self-signed'  # self-signed | letsencrypt | custom
+
+# Email para Let's Encrypt (solo si usas letsencrypt)
+SSL_LETSENCRYPT_EMAIL='admin@tusitio.com'
+
+# Forzar HTTPS en Moodle
+SSL_FORCE_HTTPS='true'
+```
+
+#### Solucion de Problemas SSL
+
+**Error de contenido mixto**:
+```
+Se ha bloqueado la carga del contenido activo mixto "http://..."
+```
+
+**Solucion**: El instalador configura automaticamente Moodle para forzar HTTPS. Si el error persiste:
+
+1. Verificar que la URL en .env use `https://`
+2. Aplicar la configuracion SSL al config.php de Moodle:
+   ```bash
+   # Ver la configuracion generada
+   cat /opt/docker-project/production/moodle_config/ssl_config.php
+
+   # Agregarla al config.php de Moodle
+   docker exec -it moodle_production nano /var/www/html/config.php
+   ```
+
+3. Limpiar cache de Moodle:
+   - Via web: Admin > Desarrollo > Limpiar todas las caches
+   - Via CLI: `docker exec moodle_production php admin/cli/purge_caches.php`
+
+#### Script Automatico para Aplicar SSL
+
+Se incluye un script que aplica automaticamente la configuracion SSL:
+
+```bash
+# Para testing
+sudo bash utils/apply_ssl_config.sh testing
+
+# Para produccion
+sudo bash utils/apply_ssl_config.sh production
+```
+
+El script:
+- Verifica que Moodle este instalado
+- Aplica la configuracion SSL al config.php
+- Limpia el cache automaticamente
+- Reinicia el contenedor
+
+Ver documentacion completa: [utils/SSL_CONFIGURATION.md](utils/SSL_CONFIGURATION.md)
 
 ## Sistema de Backups
 

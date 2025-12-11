@@ -84,6 +84,11 @@ class Settings:
             'NGINX_HTTP_PORT': '80',
             'NGINX_HTTPS_PORT': '443',
 
+            # SSL Configuration
+            'SSL_CERT_TYPE': 'self-signed',
+            'SSL_LETSENCRYPT_EMAIL': '',
+            'SSL_FORCE_HTTPS': 'true',
+
             # Backup Configuration
             'BACKUP_RETENTION_DAYS': '7',
             'BACKUP_EMAIL_TO': '',
@@ -182,7 +187,31 @@ class Settings:
     def SMTP_FROM_NAME(self):
         """Nombre del remitente en emails"""
         return self.env_vars.get('SMTP_FROM_NAME', 'Moodle Backup System')
-    
+
+    @property
+    def SSL_CERT_TYPE(self):
+        """Tipo de certificado SSL"""
+        value = self.env_vars.get('SSL_CERT_TYPE', 'self-signed')
+        if isinstance(value, str):
+            value = value.strip("'\"")
+        return value
+
+    @property
+    def SSL_LETSENCRYPT_EMAIL(self):
+        """Email para Let's Encrypt"""
+        value = self.env_vars.get('SSL_LETSENCRYPT_EMAIL', '')
+        if isinstance(value, str):
+            value = value.strip("'\"")
+        return value
+
+    @property
+    def SSL_FORCE_HTTPS(self):
+        """Forzar HTTPS en Moodle"""
+        value = self.env_vars.get('SSL_FORCE_HTTPS', 'true')
+        if isinstance(value, str):
+            value = value.strip("'\"").lower()
+        return value == 'true'
+
     def get_env_var(self, key, default=None):
         """Obtiene una variable de entorno"""
         return self.env_vars.get(key, default)
@@ -219,6 +248,12 @@ class Settings:
                 f.write("# NGINX\n")
                 for key in self.env_vars:
                     if key.startswith('NGINX_'):
+                        f.write(f"{key}='{self.env_vars[key]}'\n")
+                f.write("\n")
+
+                f.write("# SSL CONFIGURATION\n")
+                for key in self.env_vars:
+                    if key.startswith('SSL_'):
                         f.write(f"{key}='{self.env_vars[key]}'\n")
                 f.write("\n")
 
