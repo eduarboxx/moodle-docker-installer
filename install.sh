@@ -67,9 +67,51 @@ fi
 echo "Instalando dependencias Python..."
 pip3 install -r requirements.txt
 
+# Crear archivo .env si no existe
 echo ""
-echo "Instalacion completada!"
+if [ ! -f .env ]; then
+    echo "Creando archivo de configuracion .env desde .env.example..."
+    if [ -f .env.example ]; then
+        cp .env.example .env
+        echo "Archivo .env creado exitosamente"
+        echo ""
+        echo "================================================================="
+        echo "  IMPORTANTE: Debes editar el archivo .env antes de continuar"
+        echo "================================================================="
+        echo ""
+        echo "El archivo .env contiene las variables de configuracion necesarias."
+        echo "Por defecto, las contraseñas estan marcadas como 'GENERAR_CONTRASEÑA_SEGURA'"
+        echo ""
+        echo "Opciones:"
+        echo "  1. Ejecutar el instalador y las contraseñas se generaran automaticamente"
+        echo "  2. Editar .env manualmente y establecer tus propias contraseñas"
+        echo ""
+        echo "Para editar el archivo .env:"
+        echo "  nano .env"
+        echo "  o"
+        echo "  vim .env"
+        echo ""
+    else
+        echo "Error: No se encontro .env.example"
+        echo "El archivo .env debe crearse manualmente"
+    fi
+else
+    echo "El archivo .env ya existe, no se sobrescribira"
+fi
+
 echo ""
-echo "Para ejecutar el instalador:"
-echo "  sudo python3 main.py"
+echo "================================================================="
+echo "  Instalacion de dependencias completada"
+echo "================================================================="
+echo ""
+echo "PROXIMOS PASOS:"
+echo ""
+echo "1. (Opcional) Edita el archivo .env con tus configuraciones:"
+echo "   nano .env"
+echo ""
+echo "2. Ejecuta el instalador principal:"
+echo "   sudo python3 main.py"
+echo ""
+echo "Nota: Si no editas el .env, el instalador generara contraseñas"
+echo "      seguras automaticamente durante la instalacion."
 echo ""

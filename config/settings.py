@@ -19,7 +19,36 @@ class Settings:
         self.pg = PasswordGenerator()
         self.env_vars = {}
         self._load_default_vars()
-    
+        # Intentar cargar .env del directorio raíz del proyecto si existe
+        self._try_load_project_env()
+
+    def _try_load_project_env(self):
+        """Intenta cargar .env del directorio raíz del proyecto"""
+        try:
+            # Obtener directorio raíz del proyecto
+            project_root = Path(__file__).parent.parent
+            env_file = project_root / '.env'
+
+            if env_file.exists():
+                with open(env_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            key = key.strip()
+                            value = value.strip().strip("'\"")
+
+                            # Solo sobrescribir si el valor no es el placeholder
+                            if value and value != 'GENERAR_CONTRASEÑA_SEGURA':
+                                self.env_vars[key] = value
+                            # Si es placeholder y la clave es de contraseña, generar una
+                            elif 'PASS' in key and value == 'GENERAR_CONTRASEÑA_SEGURA':
+                                # Mantener la contraseña generada por defecto
+                                pass
+        except Exception as e:
+            # No hacer nada si falla, usar valores por defecto
+            pass
+
     def _load_default_vars(self):
         """Carga variables por defecto"""
         self.env_vars = {

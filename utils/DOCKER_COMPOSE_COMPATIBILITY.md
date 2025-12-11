@@ -57,8 +57,8 @@ Los siguientes archivos han sido modificados para usar el wrapper:
 
 ## Ventajas
 
-- ✅ Compatibilidad con sistemas que tienen V1 o V2
-- ✅ Transición automática entre versiones
-- ✅ No requiere cambios manuales
-- ✅ Cache del comando detectado para mejor rendimiento
-- ✅ Manejo consistente de errores
+- Compatibilidad con sistemas que tienen V1 o V2
+- Transición automática entre versiones
+- No requiere cambios manuales
+- Cache del comando detectado para mejor rendimiento
+- Manejo consistente de errores

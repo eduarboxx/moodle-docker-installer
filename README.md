@@ -31,19 +31,43 @@ Instalador automatizado de infraestructura Moodle con Docker para ambientes de T
 # Clonar o descargar el proyecto
 cd moodle-docker-installer
 
-# Instalar dependencias Python
-pip3 install -r requirements.txt
+# 1. IMPORTANTE: Ejecutar script de instalación de dependencias
+#    Este script instalará git, wget, pip y creará el archivo .env
+sudo ./install.sh
 
-# Ejecutar instalador
+# 2. (OPCIONAL) Editar el archivo .env con tus configuraciones
+#    Si no lo editas, se generarán contraseñas seguras automáticamente
+nano .env
+
+# 3. Ejecutar instalador principal
 sudo python3 main.py
 ```
+
+### Importante: Orden de Instalación
+
+1. **Primero**: Ejecuta `sudo ./install.sh`
+   - Instala dependencias del sistema (git, wget)
+   - Instala pip3 si no está presente
+   - Instala dependencias Python
+   - **Crea archivo .env desde .env.example**
+
+2. **Segundo**: Edita el archivo `.env` (opcional)
+   - Configura URLs personalizadas
+   - Configura puertos si los por defecto están ocupados
+   - Establece contraseñas personalizadas (o déjalas para auto-generación)
+
+3. **Tercero**: Ejecuta `sudo python3 main.py`
+   - Inicia el instalador principal
+   - Las contraseñas marcadas como `GENERAR_CONTRASEÑA_SEGURA` se generan automáticamente
 
 ## Estructura del Proyecto
 
 ```
 moodle-docker-installer/
 ├── main.py                      # Script principal
+├── install.sh                   # Script de instalación de dependencias
 ├── requirements.txt             # Dependencias Python
+├── .env.example                 # Plantilla de configuración
 ├── config/                      # Configuraciones
 │   ├── settings.py
 │   └── env_template.py
@@ -163,27 +187,111 @@ docker-compose up -d
 
 ## Configuracion
 
-### Variables de Entorno
+### Archivo .env - Configuración del Sistema
 
-El archivo `.env` contiene todas las configuraciones:
+El archivo `.env` es **creado automáticamente** por el script `install.sh` desde la plantilla `.env.example`.
+
+#### Generación Automática del .env
+
+Al ejecutar `sudo ./install.sh`, el script:
+1. Copia `.env.example` a `.env` si no existe
+2. Te informa que puedes editarlo antes de continuar
+3. Si no lo editas, el instalador principal generará contraseñas seguras automáticamente
+
+#### Contenido del .env
+
+El archivo contiene todas las configuraciones del sistema:
 
 ```bash
-# URLs
-TEST_URL=https://test.moodle.local
-PROD_URL=https://moodle.local
+# GENERAL
+MOODLE_VERSION='4.5.5'
+PROJECT_NAME='moodle_infrastructure'
 
-# Puertos
-TEST_HTTP_PORT=8080
-TEST_HTTPS_PORT=8443
-PROD_HTTP_PORT=80
-PROD_HTTPS_PORT=443
+# TESTING ENVIRONMENT
+TEST_URL='https://test.moodle.local'
+TEST_DB_NAME='moodle_test'
+TEST_DB_USER='moodle_test_user'
+TEST_DB_PASS='GENERAR_CONTRASEÑA_SEGURA'  # Se auto-genera si no cambias esto
+TEST_DB_ROOT_PASS='GENERAR_CONTRASEÑA_SEGURA'
+TEST_MOODLE_ADMIN_USER='admin_test'
+TEST_MOODLE_ADMIN_PASS='GENERAR_CONTRASEÑA_SEGURA'
+TEST_MOODLE_ADMIN_EMAIL='admin@test.moodle.local'
+TEST_HTTP_PORT='8080'
+TEST_HTTPS_PORT='8443'
 
-# Credenciales (generadas automaticamente)
-TEST_DB_NAME=moodle_test
-TEST_DB_USER=moodle_test_user
-TEST_DB_PASS=XXXXXXXX
+# PRODUCTION ENVIRONMENT
+PROD_URL='https://moodle.local'
+PROD_DB_NAME='moodle_prod'
+PROD_DB_USER='moodle_prod_user'
+PROD_DB_PASS='GENERAR_CONTRASEÑA_SEGURA'
+PROD_DB_ROOT_PASS='GENERAR_CONTRASEÑA_SEGURA'
+PROD_MOODLE_ADMIN_USER='admin'
+PROD_MOODLE_ADMIN_PASS='GENERAR_CONTRASEÑA_SEGURA'
+PROD_MOODLE_ADMIN_EMAIL='admin@moodle.local'
+PROD_HTTP_PORT='80'
+PROD_HTTPS_PORT='443'
+
+# BACKUP CONFIGURATION
+BACKUP_RETENTION_DAYS='7'
+BACKUP_EMAIL_TO=''
+
+# SMTP CONFIGURATION
+SMTP_SERVER='smtp.gmail.com'
+SMTP_PORT='465'
+SMTP_USER=''
+SMTP_PASSWORD=''
+
+# RESOURCE LIMITS
+PHP_MEMORY_LIMIT='512M'
+PHP_UPLOAD_MAX_FILESIZE='100M'
 ...
 ```
+
+#### Opciones de Configuración
+
+**Opción 1: Auto-generación (Recomendado para pruebas)**
+```bash
+# No edites el .env, deja los valores por defecto
+sudo python3 main.py
+# Las contraseñas se generarán automáticamente
+```
+
+**Opción 2: Configuración Manual**
+```bash
+# Edita el .env antes de ejecutar el instalador
+nano .env
+# Cambia las contraseñas marcadas como GENERAR_CONTRASEÑA_SEGURA
+# Personaliza URLs y puertos según necesites
+sudo python3 main.py
+```
+
+#### Variables Importantes a Personalizar
+
+1. **URLs** - Si tienes dominios reales:
+   ```bash
+   TEST_URL='https://test.tusitio.com'
+   PROD_URL='https://tusitio.com'
+   ```
+
+2. **Puertos** - Si los puertos por defecto están ocupados:
+   ```bash
+   TEST_HTTP_PORT='8080'   # Cambia si 8080 está ocupado
+   PROD_HTTP_PORT='80'     # Cambia si 80 está ocupado
+   ```
+
+3. **Contraseñas** - Para producción se recomienda establecerlas manualmente:
+   ```bash
+   PROD_DB_PASS='TuContraseñaSegura123!'
+   PROD_DB_ROOT_PASS='OtraContraseñaSegura456!'
+   PROD_MOODLE_ADMIN_PASS='AdminPass789!'
+   ```
+
+4. **Email (opcional)** - Para notificaciones de backups:
+   ```bash
+   SMTP_USER='tu-email@gmail.com'
+   SMTP_PASSWORD='contraseña-de-aplicacion'
+   BACKUP_EMAIL_TO='admin@tusitio.com'
+   ```
 
 ### Personalizar URLs
 
