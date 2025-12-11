@@ -24,6 +24,29 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
+# Habilitar repositorios necesarios segun el sistema operativo
+echo "Verificando repositorios del sistema..."
+if command -v dnf &> /dev/null; then
+    # Sistema basado en RHEL/Rocky/CentOS
+    if [ -f /etc/redhat-release ]; then
+        echo "Sistema RHEL/Rocky detectado"
+
+        # Verificar si EPEL esta instalado
+        if ! rpm -q epel-release &> /dev/null; then
+            echo "Instalando repositorio EPEL..."
+            dnf install -y epel-release
+
+            # Habilitar CodeReady Builder (CRB) si esta disponible
+            if command -v crb &> /dev/null; then
+                echo "Habilitando CodeReady Builder (CRB)..."
+                crb enable || true
+            fi
+        else
+            echo "EPEL ya esta instalado"
+        fi
+    fi
+fi
+
 # Instalar herramientas necesarias: git y wget
 echo "Verificando herramientas necesarias..."
 TOOLS_TO_INSTALL=""

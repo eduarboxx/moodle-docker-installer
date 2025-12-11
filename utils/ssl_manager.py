@@ -259,23 +259,82 @@ class SSLManager:
             # Detectar sistema operativo
             if os.path.exists('/etc/debian_version'):
                 # Debian/Ubuntu
+                print("Instalando certbot en Debian/Ubuntu...")
                 subprocess.run(['apt-get', 'update'], check=True)
                 subprocess.run(['apt-get', 'install', '-y', 'certbot'], check=True)
+
             elif os.path.exists('/etc/redhat-release'):
                 # RHEL/Rocky/CentOS
-                subprocess.run(['dnf', 'install', '-y', 'certbot'], check=True)
+                print("Instalando certbot en RHEL/Rocky Linux...")
+
+                # Verificar version de RHEL/Rocky
+                with open('/etc/redhat-release', 'r') as f:
+                    release = f.read().lower()
+
+                # Habilitar EPEL si no esta habilitado
+                print("Habilitando repositorio EPEL...")
+                if 'rocky' in release or 'centos' in release:
+                    subprocess.run(['dnf', 'install', '-y', 'epel-release'], check=False)
+
+                # Intentar instalar certbot desde EPEL
+                result = subprocess.run(['dnf', 'install', '-y', 'certbot'],
+                                      capture_output=True, text=True)
+
+                if result.returncode != 0:
+                    # Si falla, intentar instalar via snap
+                    print("Certbot no disponible via DNF, intentando con snapd...")
+
+                    # Instalar snapd
+                    subprocess.run(['dnf', 'install', '-y', 'snapd'], check=False)
+                    subprocess.run(['systemctl', 'enable', '--now', 'snapd.socket'], check=False)
+                    subprocess.run(['ln', '-sf', '/var/lib/snapd/snap', '/snap'], check=False)
+
+                    # Esperar a que snapd se inicialice
+                    import time
+                    print("Esperando inicializacion de snapd...")
+                    time.sleep(5)
+
+                    # Instalar certbot via snap
+                    result = subprocess.run(['snap', 'install', '--classic', 'certbot'],
+                                          capture_output=True, text=True)
+
+                    if result.returncode == 0:
+                        # Crear symlink
+                        subprocess.run(['ln', '-sf', '/snap/bin/certbot', '/usr/bin/certbot'],
+                                     check=False)
+                        print("Certbot instalado via snap")
+                    else:
+                        print("\nNo se pudo instalar certbot automaticamente.")
+                        print("Puedes instalarlo manualmente con:")
+                        print("  sudo dnf install epel-release")
+                        print("  sudo dnf install certbot")
+                        print("\nO usar pip:")
+                        print("  sudo pip3 install certbot")
+                        return False
+
             elif os.path.exists('/etc/arch-release'):
                 # Arch Linux
                 subprocess.run(['pacman', '-S', '--noconfirm', 'certbot'], check=True)
             else:
                 print("Sistema operativo no soportado para instalacion automatica de certbot")
-                return False
+                print("\nPuedes intentar instalarlo con pip:")
+                print("  sudo pip3 install certbot certbot-apache")
+
+                install_pip = input("\nDeseas intentar instalar con pip? (s/n) [s]: ").strip().lower()
+                if install_pip != 'n':
+                    subprocess.run(['pip3', 'install', 'certbot'], check=True)
+                else:
+                    return False
 
             print("Certbot instalado exitosamente")
             return True
 
         except Exception as e:
             print(f"Error instalando certbot: {str(e)}")
+            print("\nComo alternativa, puedes:")
+            print("1. Usar certificado autofirmado (selecciona opcion 1)")
+            print("2. Usar certificado personalizado (selecciona opcion 3)")
+            print("3. Instalar certbot manualmente luego ejecutar nuevamente")
             return False
 
     def _setup_certbot_renewal(self):

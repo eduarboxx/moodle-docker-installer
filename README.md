@@ -46,6 +46,7 @@ sudo python3 main.py
 ### Importante: Orden de Instalación
 
 1. **Primero**: Ejecuta `sudo ./install.sh`
+   - Habilita repositorio EPEL (en RHEL/Rocky Linux)
    - Instala dependencias del sistema (git, wget)
    - Instala pip3 si no está presente
    - Instala dependencias Python
@@ -318,6 +319,7 @@ El instalador configura automaticamente certificados SSL para evitar problemas d
    - Certificados gratuitos y validos
    - Renovacion automatica
    - Requiere dominio publico
+   - **Nota**: En Rocky Linux/RHEL requiere instalacion manual de certbot. Ver [utils/CERTBOT_ROCKY_LINUX.md](utils/CERTBOT_ROCKY_LINUX.md)
 
 3. **Personalizados**
    - Para certificados comprados o propios
