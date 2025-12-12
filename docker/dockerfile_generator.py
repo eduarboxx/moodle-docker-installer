@@ -75,7 +75,12 @@ RUN a2enmod rewrite expires headers ssl
 # Copiar Moodle
 COPY """ + self.settings.MOODLE_VERSION + """/ /var/www/html/
 
-# Permisos
+# Crear directorio moodledata y dar permisos
+RUN mkdir -p /var/moodledata && \\
+    chown -R www-data:www-data /var/moodledata && \\
+    chmod -R 777 /var/moodledata
+
+# Permisos para html
 RUN chown -R www-data:www-data /var/www/html
 
 # Puerto
