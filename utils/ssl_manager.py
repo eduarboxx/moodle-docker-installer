@@ -183,14 +183,20 @@ class SSLManager:
                 cert_file = os.path.join(self.ssl_path, f'{env}.crt')
                 key_file = os.path.join(self.ssl_path, f'{env}.key')
 
-                # Crear enlaces simbolicos
+                # Copiar certificados (no symlinks, ya que nginx no puede seguir symlinks fuera de su volumen)
                 if os.path.exists(le_cert) and os.path.exists(le_key):
-                    subprocess.run(['ln', '-sf', le_cert, cert_file])
-                    subprocess.run(['ln', '-sf', le_key, key_file])
+                    import shutil
+                    shutil.copy2(le_cert, cert_file)
+                    shutil.copy2(le_key, key_file)
+
+                    # Establecer permisos correctos
+                    os.chmod(cert_file, 0o644)
+                    os.chmod(key_file, 0o600)
 
                     print(f"Certificado de Let's Encrypt configurado para {env}")
-                    print(f"  Certificado: {cert_file} -> {le_cert}")
-                    print(f"  Clave privada: {key_file} -> {le_key}")
+                    print(f"  Certificado: {cert_file}")
+                    print(f"  Clave privada: {key_file}")
+                    print(f"  (Copiados desde {le_cert})")
 
                     # Configurar renovacion automatica
                     self._setup_certbot_renewal()
