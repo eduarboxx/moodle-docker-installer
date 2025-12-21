@@ -69,8 +69,7 @@ class ComposeGenerator:
         config['services']['mysql_production'] = self._build_mysql_service('production')
         config['services']['moodle_production'] = self._build_moodle_service('production')
 
-        # Nginx unificado para ambos ambientes
-        config['services']['nginx'] = self._build_nginx_unified_service()
+        # Nginx eliminado - Apache corre en el HOST como proxy reverso
 
         return config
     
@@ -106,9 +105,11 @@ class ComposeGenerator:
     def _build_moodle_service(self, env):
         """Construye configuracion de Moodle para un ambiente"""
         env_prefix = 'TEST' if env == 'testing' else 'PROD'
-        port_http = '${TEST_HTTP_PORT}' if env == 'testing' else '${PROD_HTTP_PORT}'
-        port_https = '${TEST_HTTPS_PORT}' if env == 'testing' else '${PROD_HTTPS_PORT}'
-        
+
+        # Puertos expuestos al host para que Apache haga proxy
+        # Testing: 8081:80, Production: 8082:80
+        host_port = '8081' if env == 'testing' else '8082'
+
         return {
             'build': {
                 'context': './moodle',
@@ -123,8 +124,12 @@ class ComposeGenerator:
                 f"MOODLE_DATABASE_PASSWORD=${{{env_prefix}_DB_PASS}}",
                 f"MOODLE_URL=${{{env_prefix}_URL}}"
             ],
+            'ports': [
+                f'{host_port}:80'
+            ],
             'volumes': [
                 f'moodledata_{env}:/var/moodledata',
+                f'./{env}/www-moodledata:/var/www/moodledata',
                 f'./logs/{env}:/var/log/apache2'
             ],
             'networks': [
@@ -142,37 +147,5 @@ class ComposeGenerator:
                 'timeout': '10s',
                 'retries': 3,
                 'start_period': '60s'
-            }
-        }
-    
-    def _build_nginx_unified_service(self):
-        """Construye configuracion de Nginx unificado para ambos ambientes"""
-        return {
-            'build': {
-                'context': './nginx',
-                'dockerfile': 'Dockerfile'
-            },
-            'container_name': 'nginx',
-            'ports': [
-                '${TEST_HTTP_PORT}:8080',
-                '${TEST_HTTPS_PORT}:8443',
-                '${PROD_HTTP_PORT}:80',
-                '${PROD_HTTPS_PORT}:443'
-            ],
-            'volumes': [
-                './nginx/conf.d:/etc/nginx/conf.d:ro',
-                './nginx/ssl:/etc/nginx/ssl:ro',
-                './logs/nginx:/var/log/nginx'
-            ],
-            'networks': [
-                'testing',
-                'production'
-            ],
-            'restart': 'unless-stopped',
-            'healthcheck': {
-                'test': ['CMD', 'wget', '--quiet', '--tries=1', '--spider', 'http://localhost:8080/'],
-                'interval': '30s',
-                'timeout': '10s',
-                'retries': 3
             }
         }

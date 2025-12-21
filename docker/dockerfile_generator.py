@@ -1,6 +1,6 @@
 """
 Dockerfile Generator Module
-Genera los Dockerfiles para Moodle y Nginx
+Genera el Dockerfile para Moodle
 """
 
 import os
@@ -14,13 +14,12 @@ class DockerfileGenerator:
         self.base_path = settings.BASE_PATH
     
     def generate_all(self):
-        """Genera todos los Dockerfiles necesarios"""
+        """Genera el Dockerfile de Moodle"""
         try:
             self.generate_moodle_dockerfile()
-            self.generate_nginx_dockerfile()
             return True
         except Exception as e:
-            print(f"Error generando Dockerfiles: {str(e)}")
+            print(f"Error generando Dockerfile: {str(e)}")
             return False
     
     def generate_moodle_dockerfile(self):
@@ -75,7 +74,12 @@ RUN a2enmod rewrite expires headers ssl
 # Copiar Moodle
 COPY """ + self.settings.MOODLE_VERSION + """/ /var/www/html/
 
-# Crear directorio moodledata y dar permisos
+# Configurar permisos para /var/www (directorio padre)
+RUN chown -R www-data:www-data /var/www && \\
+    chmod 755 /var/www
+
+# Crear directorio /var/moodledata (volumen interno)
+# /var/www/moodledata se monta desde el host, no se crea aquí
 RUN mkdir -p /var/moodledata && \\
     chown -R www-data:www-data /var/moodledata && \\
     chmod -R 777 /var/moodledata
@@ -102,31 +106,4 @@ CMD ["apache2-foreground"]
             f.write(dockerfile_content)
         
         print(f"Dockerfile de Moodle creado: {dockerfile_path}")
-        return True
-    
-    def generate_nginx_dockerfile(self):
-        """Genera Dockerfile para Nginx"""
-        dockerfile_content = """FROM nginx:alpine
-
-# Las configuraciones se montan como volúmenes en docker-compose
-# Permisos
-RUN chown -R nginx:nginx /var/cache/nginx \\
-    && chown -R nginx:nginx /var/log/nginx
-
-# Puerto
-EXPOSE 80 443
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \\
-    CMD wget --quiet --tries=1 --spider http://localhost/ || exit 1
-
-CMD ["nginx", "-g", "daemon off;"]
-"""
-
-        dockerfile_path = os.path.join(self.base_path, 'nginx', 'Dockerfile')
-
-        with open(dockerfile_path, 'w') as f:
-            f.write(dockerfile_content)
-
-        print(f"Dockerfile de Nginx creado: {dockerfile_path}")
         return True

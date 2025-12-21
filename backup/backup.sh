@@ -9,6 +9,35 @@
 # Configuración de variables
 ENVIRONMENT="${1:-testing}"  # testing o production (por defecto testing)
 FECHA="$(date +"%Y-%m-%d_%H-%M-%S")"
+
+# Cargar variables desde .env si las variables no están definidas
+if [ -z "$BACKUP_BASE_PATH" ] || [ -z "$DB_NAME" ]; then
+    ENV_FILE="${ENV_FILE:-/opt/docker-project/.env}"
+
+    if [ -f "$ENV_FILE" ]; then
+        # Cargar todas las variables del .env
+        set -a
+        source "$ENV_FILE"
+        set +a
+
+        # Establecer variables específicas según el ambiente
+        if [ "$ENVIRONMENT" = "production" ]; then
+            DB_NAME="${PROD_DB_NAME}"
+            DB_USER="${PROD_DB_USER}"
+            DB_PASS="${PROD_DB_PASS}"
+            DB_ROOT_PASS="${PROD_DB_ROOT_PASS}"
+        else
+            DB_NAME="${TEST_DB_NAME}"
+            DB_USER="${TEST_DB_USER}"
+            DB_PASS="${TEST_DB_PASS}"
+            DB_ROOT_PASS="${TEST_DB_ROOT_PASS}"
+        fi
+    else
+        echo "ADVERTENCIA: No se encontró archivo .env en $ENV_FILE"
+        echo "Las variables deben estar definidas en el entorno"
+    fi
+fi
+
 BASE_BACKUP_DIR="${BACKUP_BASE_PATH:-/opt/docker-project/backups}"
 BACKUP_DIR="$BASE_BACKUP_DIR/$ENVIRONMENT/$FECHA"
 DAYS_TO_KEEP="${BACKUP_RETENTION_DAYS:-7}"

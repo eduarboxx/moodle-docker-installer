@@ -15,31 +15,27 @@ class DirectoryManager:
         self.directories = [
             # Raiz
             base_path,
-            
-            # Nginx
-            os.path.join(base_path, 'nginx'),
-            os.path.join(base_path, 'nginx', 'conf.d'),
-            os.path.join(base_path, 'nginx', 'ssl'),
-            
+
             # Moodle
             os.path.join(base_path, 'moodle'),
-            
+
             # Testing
             os.path.join(base_path, 'testing'),
             os.path.join(base_path, 'testing', 'moodledata'),
+            os.path.join(base_path, 'testing', 'www-moodledata'),
             os.path.join(base_path, 'testing', 'mysql-data'),
-            
+
             # Production
             os.path.join(base_path, 'production'),
             os.path.join(base_path, 'production', 'moodledata'),
+            os.path.join(base_path, 'production', 'www-moodledata'),
             os.path.join(base_path, 'production', 'mysql-data'),
-            
+
             # Logs
             os.path.join(base_path, 'logs'),
             os.path.join(base_path, 'logs', 'testing'),
             os.path.join(base_path, 'logs', 'production'),
-            os.path.join(base_path, 'logs', 'nginx'),
-            
+
             # Backups
             os.path.join(base_path, 'backups'),
             os.path.join(base_path, 'backups', 'testing'),
@@ -68,13 +64,23 @@ class DirectoryManager:
         """Establece permisos para directorios moodledata"""
         moodledata_dirs = [
             os.path.join(self.base_path, 'testing', 'moodledata'),
-            os.path.join(self.base_path, 'production', 'moodledata')
+            os.path.join(self.base_path, 'testing', 'www-moodledata'),
+            os.path.join(self.base_path, 'production', 'moodledata'),
+            os.path.join(self.base_path, 'production', 'www-moodledata')
         ]
 
         for directory in moodledata_dirs:
             try:
-                os.chmod(directory, 0o755)
-                print(f"Permisos 755 aplicados a: {directory}")
+                # Usar 777 para que www-data (UID 33) pueda escribir
+                os.chmod(directory, 0o777)
+                print(f"Permisos 777 aplicados a: {directory}")
+
+                # Intentar cambiar ownership a UID 33 (www-data)
+                try:
+                    os.chown(directory, 33, 33)
+                    print(f"Ownership cambiado a UID 33 (www-data): {directory}")
+                except PermissionError:
+                    print(f"  (Ownership no cambiado - requiere sudo, pero permisos 777 son suficientes)")
             except Exception as e:
                 print(f"Error aplicando permisos a {directory}: {str(e)}")
     

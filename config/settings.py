@@ -65,7 +65,7 @@ class Settings:
             'TEST_MOODLE_ADMIN_USER': 'admin_test',
             'TEST_MOODLE_ADMIN_PASS': self.pg.generate(),
             'TEST_MOODLE_ADMIN_EMAIL': 'admin@test.moodle.local',
-            'TEST_HTTP_PORT': '8080',
+            'TEST_HTTP_PORT': '8081',
             'TEST_HTTPS_PORT': '8443',
 
             # Production
@@ -119,12 +119,7 @@ class Settings:
     def MOODLE_PATH(self):
         """Ruta de instalacion de Moodle"""
         return os.path.join(self.BASE_PATH, 'moodle', self.MOODLE_VERSION)
-    
-    @property
-    def NGINX_PATH(self):
-        """Ruta de configuracion de Nginx"""
-        return os.path.join(self.BASE_PATH, 'nginx')
-    
+
     @property
     def TESTING_PATH(self):
         """Ruta del ambiente de testing"""

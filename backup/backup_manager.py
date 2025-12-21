@@ -22,31 +22,15 @@ class BackupManager:
 
     def _prepare_env_vars(self, environment):
         """Prepara variables de entorno para los scripts"""
-        env_prefix = 'TEST' if environment == 'testing' else 'PROD'
-
         env_vars = os.environ.copy()
-        env_vars.update({
-            'BACKUP_BASE_PATH': self.backup_path,
-            'BACKUP_RETENTION_DAYS': str(self.settings.BACKUP_RETENTION_DAYS),
-            'DB_NAME': self.settings.get_env_var(f'{env_prefix}_DB_NAME'),
-            'DB_USER': self.settings.get_env_var(f'{env_prefix}_DB_USER'),
-            'DB_PASS': self.settings.get_env_var(f'{env_prefix}_DB_PASS'),
-            'DB_ROOT_PASS': self.settings.get_env_var(f'{env_prefix}_DB_ROOT_PASS'),
-        })
 
-        # Variables de email si están configuradas
-        if hasattr(self.settings, 'BACKUP_EMAIL_TO'):
-            env_vars['BACKUP_EMAIL_TO'] = self.settings.BACKUP_EMAIL_TO
-        if hasattr(self.settings, 'SMTP_USER'):
-            env_vars['SMTP_USER'] = self.settings.SMTP_USER
-        if hasattr(self.settings, 'SMTP_PASSWORD'):
-            env_vars['SMTP_PASSWORD'] = self.settings.SMTP_PASSWORD
-        if hasattr(self.settings, 'SMTP_SERVER'):
-            env_vars['SMTP_SERVER'] = self.settings.SMTP_SERVER
-        if hasattr(self.settings, 'SMTP_PORT'):
-            env_vars['SMTP_PORT'] = str(self.settings.SMTP_PORT)
-        if hasattr(self.settings, 'SMTP_FROM_NAME'):
-            env_vars['SMTP_FROM_NAME'] = self.settings.SMTP_FROM_NAME
+        # Solo pasar la ruta al archivo .env
+        env_file = os.path.join(self.settings.BASE_PATH, '.env')
+        if os.path.exists(env_file):
+            env_vars['ENV_FILE'] = env_file
+        else:
+            # Fallback a la ruta por defecto
+            env_vars['ENV_FILE'] = '/opt/docker-project/.env'
 
         return env_vars
 
@@ -69,19 +53,13 @@ class BackupManager:
         try:
             env_vars = self._prepare_env_vars(environment)
 
-            # Ejecutar script de backup
+            # Ejecutar script de backup sin capturar output para mostrar en tiempo real
+            # Esto permite que el usuario vea el progreso mientras se ejecuta
             result = subprocess.run(
                 ['bash', str(self.backup_script), environment],
                 env=env_vars,
-                capture_output=True,
                 text=True
             )
-
-            # Mostrar output
-            if result.stdout:
-                print(result.stdout)
-            if result.stderr:
-                print(result.stderr)
 
             if result.returncode == 0:
                 print(f"\nBackup de {environment} completado exitosamente")
@@ -119,20 +97,16 @@ class BackupManager:
 
         try:
             env_vars = self._prepare_env_vars(environment)
+            # Saltar confirmación en el script de bash ya que se hizo en Python
+            env_vars['SKIP_CONFIRMATION'] = 'yes'
 
-            # Ejecutar script de restore
+            # Ejecutar script de restore sin capturar output para mostrar en tiempo real
+            # Esto permite que el usuario vea el progreso mientras se ejecuta
             result = subprocess.run(
                 ['bash', str(self.restore_script), environment, backup_timestamp],
                 env=env_vars,
-                capture_output=True,
                 text=True
             )
-
-            # Mostrar output
-            if result.stdout:
-                print(result.stdout)
-            if result.stderr:
-                print(result.stderr)
 
             if result.returncode == 0:
                 print(f"\nRestauración de {environment} completada exitosamente")

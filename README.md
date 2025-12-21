@@ -9,7 +9,8 @@ Instalador automatizado de infraestructura Moodle con Docker para ambientes de T
 - Descarga de Moodle 4.5.5 desde sitio oficial
 - Ambientes separados de Testing y Produccion
 - Bases de datos MySQL independientes
-- Proxy reverso Nginx unificado con SSL
+- **Proxy reverso Apache en el HOST** (no requiere contenedor adicional)
+- Configuracion automatica de VirtualHosts de Apache
 - **Sistema completo de backups y restauracion**
 - **Configuracion automatica de backups durante instalacion**
 - Gestion completa desde menu interactivo
@@ -82,8 +83,8 @@ moodle-docker-installer/
 │   ├── compose_generator.py
 │   ├── network_manager.py
 │   └── volume_manager.py
-├── nginx/                       # Configuraciones Nginx
-│   └── config_generator.py
+├── apache/                      # Configuraciones Apache
+│   └── vhost_generator.py       # Generador de VirtualHosts
 ├── backup/                      # Sistema de backups
 │   ├── backup.sh                # Script de respaldo
 │   ├── restore.sh               # Script de restauracion
@@ -110,13 +111,6 @@ Una vez instalado, la estructura en `/opt/docker-project/` sera:
 /opt/docker-project/
 ├── .env                         # Variables de entorno
 ├── docker-compose.yml           # Orquestacion de contenedores
-├── nginx/                       # Configuraciones Nginx
-│   ├── conf.d/
-│   │   ├── testing.conf
-│   │   └── production.conf
-│   └── ssl/
-│       ├── testing.crt
-│       └── production.crt
 ├── moodle/
 │   ├── 4.5.5/                   # Codigo fuente Moodle
 │   └── Dockerfile
@@ -128,11 +122,18 @@ Una vez instalado, la estructura en `/opt/docker-project/` sera:
 │   └── mysql-data/              # Datos MySQL Produccion
 ├── logs/
 │   ├── testing/
-│   ├── production/
-│   └── nginx/
+│   └── production/
 └── backups/
     ├── testing/
     └── production/
+
+Configuracion de Apache (en el HOST):
+├── /etc/apache2/sites-available/        # Debian/Ubuntu
+│   ├── moodle-testing.conf
+│   └── moodle-production.conf
+└── /etc/httpd/conf.d/                   # RHEL/Rocky/Arch
+    ├── moodle-testing.conf
+    └── moodle-production.conf
 ```
 
 ## Uso
@@ -156,7 +157,7 @@ La opcion 1 realiza:
 - Descarga de Moodle 4.5.5
 - Generacion de credenciales seguras
 - Creacion de Dockerfiles y docker-compose.yml
-- Configuracion de Nginx
+- Configuracion de Apache VirtualHosts en el HOST
 - Opcion de levantar ambientes
 
 ### Gestion de Ambientes
@@ -181,13 +182,17 @@ docker-compose logs -f mysql_production
 
 # Reiniciar servicios
 docker-compose restart moodle_testing
-docker-compose restart nginx
+docker-compose restart mysql_production
 
 # Detener todo
 docker-compose down
 
 # Levantar todo
 docker-compose up -d
+
+# Reiniciar Apache (en el HOST)
+sudo systemctl restart apache2   # Debian/Ubuntu
+sudo systemctl restart httpd     # RHEL/Rocky/Arch
 ```
 
 ## Configuracion
@@ -221,7 +226,7 @@ TEST_DB_ROOT_PASS='GENERAR_CONTRASEÑA_SEGURA'
 TEST_MOODLE_ADMIN_USER='admin_test'
 TEST_MOODLE_ADMIN_PASS='GENERAR_CONTRASEÑA_SEGURA'
 TEST_MOODLE_ADMIN_EMAIL='admin@test.moodle.local'
-TEST_HTTP_PORT='8080'
+TEST_HTTP_PORT='8081'
 TEST_HTTPS_PORT='8443'
 
 # PRODUCTION ENVIRONMENT
@@ -280,7 +285,7 @@ sudo python3 main.py
 
 2. **Puertos** - Si los puertos por defecto están ocupados:
    ```bash
-   TEST_HTTP_PORT='8080'   # Cambia si 8080 está ocupado
+   TEST_HTTP_PORT='8081'   # Cambia si 8081 está ocupado
    PROD_HTTP_PORT='80'     # Cambia si 80 está ocupado
    ```
 
@@ -304,94 +309,87 @@ sudo python3 main.py
 2. Modificar `TEST_URL` y `PROD_URL`
 3. Reiniciar contenedores: `docker-compose restart`
 
-### Certificados SSL
+### Acceso a los Ambientes
 
-**IMPORTANTE**: Los certificados SSL se configuran **automáticamente después de levantar los contenedores**, solo para los ambientes que selecciones.
+El sistema utiliza **Apache como proxy reverso** en el HOST para dirigir el tráfico a los contenedores Docker de Moodle.
 
-#### Flujo de Instalación SSL
+#### URLs de Acceso
 
-1. **Durante la instalación inicial**:
-   - Se levantan primero los contenedores Docker
-   - Luego se configura SSL automáticamente para cada ambiente levantado
-   - Solo se generan certificados para los ambientes que selecciones (Testing, Producción, o ambos)
+**Ambiente Testing:**
+- Puerto Apache: `8080` (en el HOST)
+- Puerto Moodle: `8081` (contenedor Docker)
+- Acceso vía Apache (recomendado): `http://localhost:8080` o `http://IP-del-servidor:8080`
+- Acceso directo: `http://localhost:8081`
 
-2. **Al levantar un ambiente posteriormente**:
-   - Si el ambiente no tiene SSL configurado, se configurará automáticamente
-   - Si ya tiene SSL, se mantiene la configuración existente
+**Ambiente Production:**
+- Puerto Apache: `80` (en el HOST)
+- Puerto Moodle: `8082` (contenedor Docker)
+- Acceso vía Apache (recomendado): `http://localhost` o `http://IP-del-servidor`
+- Acceso directo: `http://localhost:8082`
 
-#### Tipos de Certificados Soportados
+#### Configuración de Apache
 
-1. **Autofirmados** (por defecto)
-   - Ideales para desarrollo y testing
-   - Se generan automaticamente
-   - Los navegadores mostraran advertencia de seguridad
+El instalador configura automáticamente:
+- VirtualHosts para cada ambiente
+- Puerto 8080 para Testing
+- Puerto 80 para Production
+- Headers X-Forwarded para que Moodle detecte el protocolo correcto
+- ProxyPass y ProxyPassReverse para redireccionar al contenedor
 
-2. **Let's Encrypt** (produccion)
-   - Certificados gratuitos y validos
-   - Renovacion automatica
-   - Requiere dominio publico
-   - **Nota**: En Rocky Linux/RHEL, `install.sh` habilita automáticamente el repositorio EPEL. Ver [utils/CERTBOT_ROCKY_LINUX.md](utils/CERTBOT_ROCKY_LINUX.md)
+Los archivos de configuración se crean en:
+- Debian/Ubuntu: `/etc/apache2/sites-available/moodle-{testing|production}.conf`
+- RHEL/Rocky/Arch: `/etc/httpd/conf.d/moodle-{testing|production}.conf`
 
-3. **Personalizados**
-   - Para certificados comprados o propios
-   - Se solicitan las rutas durante la instalacion
+#### Logs de Apache
 
-#### Configuracion en .env
+Los logs de Apache se almacenan en:
+- Debian/Ubuntu: `/var/log/apache2/`
+- RHEL/Rocky/Arch: `/var/log/httpd/`
 
-```bash
-# Tipo de certificado SSL
-SSL_CERT_TYPE='self-signed'  # self-signed | letsencrypt | custom
+Archivos de log específicos:
+- `moodle-testing-error.log` y `moodle-testing-access.log`
+- `moodle-production-error.log` y `moodle-production-access.log`
 
-# Email para Let's Encrypt (solo si usas letsencrypt)
-SSL_LETSENCRYPT_EMAIL='admin@tusitio.com'
-
-# Forzar HTTPS en Moodle
-SSL_FORCE_HTTPS='true'
-```
-
-#### Solucion de Problemas SSL
-
-**Error de contenido mixto**:
-```
-Se ha bloqueado la carga del contenido activo mixto "http://..."
-```
-
-**Solucion**: El instalador configura automaticamente Moodle para forzar HTTPS y aplica la configuración SSL automáticamente. Si el error persiste:
-
-1. Verificar que la URL en .env use `https://`
-2. La configuración SSL se aplica automáticamente al levantar el ambiente
-3. Para verificar la configuración SSL aplicada:
-   ```bash
-   # Ver la configuracion generada
-   cat /opt/docker-project/production/moodle_config/ssl_config.php
-
-   # Verificar si está en config.php de Moodle
-   docker exec moodle_production grep -A 5 "sslproxy" /var/www/html/config.php
-   ```
-
-3. Limpiar cache de Moodle:
-   - Via web: Admin > Desarrollo > Limpiar todas las caches
-   - Via CLI: `docker exec moodle_production php admin/cli/purge_caches.php`
-
-#### Script Automatico para Aplicar SSL
-
-Se incluye un script que aplica automaticamente la configuracion SSL:
+#### Comandos Útiles de Apache
 
 ```bash
-# Para testing
-sudo bash utils/apply_ssl_config.sh testing
+# Ver estado de Apache
+sudo systemctl status apache2    # Debian/Ubuntu
+sudo systemctl status httpd      # RHEL/Rocky/Arch
 
-# Para produccion
-sudo bash utils/apply_ssl_config.sh production
+# Reiniciar Apache
+sudo systemctl restart apache2   # Debian/Ubuntu
+sudo systemctl restart httpd     # RHEL/Rocky/Arch
+
+# Recargar configuración (sin interrumpir conexiones)
+sudo systemctl reload apache2    # Debian/Ubuntu
+sudo systemctl reload httpd      # RHEL/Rocky/Arch
+
+# Ver logs en tiempo real
+sudo tail -f /var/log/apache2/moodle-testing-access.log    # Debian/Ubuntu
+sudo tail -f /var/log/httpd/moodle-production-error.log    # RHEL/Rocky/Arch
 ```
 
-El script:
-- Verifica que Moodle este instalado
-- Aplica la configuracion SSL al config.php
-- Limpia el cache automaticamente
-- Reinicia el contenedor
+#### Certificados SSL con Let's Encrypt
 
-Ver documentacion completa: [utils/SSL_CONFIGURATION.md](utils/SSL_CONFIGURATION.md)
+Para configurar certificados SSL válidos con Let's Encrypt en Apache:
+
+```bash
+# Instalar certbot para Apache
+# Debian/Ubuntu:
+sudo apt install certbot python3-certbot-apache
+
+# RHEL/Rocky (requiere EPEL):
+sudo yum install certbot python3-certbot-apache
+
+# Obtener certificado para Testing
+sudo certbot --apache -d test.tusitio.com
+
+# Obtener certificado para Production
+sudo certbot --apache -d tusitio.com
+```
+
+**Nota**: En Rocky Linux/RHEL, el script `install.sh` habilita automáticamente el repositorio EPEL. Ver [utils/CERTBOT_ROCKY_LINUX.md](utils/CERTBOT_ROCKY_LINUX.md)
 
 ## Sistema de Backups
 

@@ -32,10 +32,10 @@ sudo python3 main.py
    - Descarga Moodle 4.5.5
    - Genera contraseñas seguras
    - Crea todos los archivos Docker
-   - Configura Nginx
+   - Configura Apache VirtualHosts en el HOST
 4. Te pregunta que ambiente levantar:
-   - Testing (puerto 8080/8443)
-   - Produccion (puerto 80/443)
+   - Testing (acceso vía Apache puerto 8080)
+   - Produccion (acceso vía Apache puerto 80)
    - Ambos
    - Ninguno (solo instalar)
 5. Muestra resumen con credenciales
@@ -44,19 +44,21 @@ sudo python3 main.py
 
 ### Testing
 ```
-URL: https://test.moodle.local:8443
+URL via Apache: http://localhost:8080 o http://IP-del-servidor:8080
+URL directa: http://localhost:8081
 Usuario: admin_test
 Contraseña: (ver en /opt/docker-project/.env)
 ```
 
 ### Produccion
 ```
-URL: https://moodle.local
+URL via Apache: http://localhost o http://IP-del-servidor
+URL directa: http://localhost:8082
 Usuario: admin
 Contraseña: (ver en /opt/docker-project/.env)
 ```
 
-NOTA: Debes configurar /etc/hosts o DNS para que apunten a tu servidor
+NOTA: Apache corre en el HOST como proxy reverso a los contenedores Docker
 
 ## Comandos Utiles
 
@@ -90,24 +92,17 @@ Opcion 2: Gestionar ambientes
 - Ver estado
 
 Opcion 3: Ver logs
-- Logs de Testing
-- Logs de Produccion
-- Logs de Nginx
-- Logs de MySQL
+- Logs de Testing (Moodle y MySQL)
+- Logs de Produccion (Moodle y MySQL)
+- Logs de Apache en /var/log/apache2/ o /var/log/httpd/
 
-Opcion 4: Backups (en desarrollo)
+Opcion 4: Gestionar backups
+- Crear backup manual
+- Restaurar backup
+- Configurar backup automatico
+- Ver tareas programadas
 
 Opcion 5: Desinstalar todo
-
-## Configuracion DNS
-
-Agregar a /etc/hosts:
-```
-127.0.0.1 test.moodle.local
-127.0.0.1 moodle.local
-```
-
-O configurar DNS real apuntando a la IP del servidor
 
 ## Personalizar URLs
 
@@ -126,10 +121,17 @@ sudo systemctl start docker
 sudo systemctl enable docker
 ```
 
-### Certificados SSL
-Los certificados por defecto son autofirmados.
-Para produccion, reemplazar en:
-`/opt/docker-project/nginx/ssl/`
+### Apache no arranca
+```bash
+sudo systemctl start apache2    # Debian/Ubuntu
+sudo systemctl start httpd      # RHEL/Rocky/Arch
+```
+
+### Ver logs de Apache
+```bash
+sudo tail -f /var/log/apache2/moodle-testing-error.log     # Debian/Ubuntu
+sudo tail -f /var/log/httpd/moodle-production-error.log    # RHEL/Rocky/Arch
+```
 
 ## Pruebas
 
@@ -141,10 +143,10 @@ python3 test.py
 ## Proximos Pasos
 
 1. Instalar
-2. Configurar DNS/hosts
-3. Acceder a Moodle
-4. Completar wizard de instalacion de Moodle
-5. Configurar backups (cuando Eduardo envie su script lindo)
+2. Acceder a Moodle via Apache (http://localhost:8080 para Testing)
+3. Completar wizard de instalacion web de Moodle
+4. Configurar backups automaticos desde el menu (opcion 4)
+5. (Opcional) Configurar SSL con certbot para produccion
 
 ## Soporte
 

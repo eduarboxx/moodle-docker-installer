@@ -54,7 +54,7 @@ def test_validator():
     print(f"Root: {validator.check_root()}")
     print(f"Espacio en disco: {validator.check_disk_space('/opt')}")
     print(f"Internet: {validator.check_internet_connection()}")
-    print(f"Puerto 8080 disponible: {validator.check_port_available(8080)}")
+    print(f"Puerto 8081 disponible: {validator.check_port_available(8081)}")
     
     print("OK")
     return True

@@ -1,5 +1,60 @@
 # Changelog - Moodle Docker Installer
 
+## [2024-12-21] - Migración de Nginx a Apache
+
+### Modificado
+- **Arquitectura de Proxy Reverso** - Cambio fundamental de Nginx a Apache
+  - **Eliminado**: Contenedores Docker de Nginx (nginx_testing y nginx_production)
+  - **Agregado**: Apache HTTP Server en el HOST como proxy reverso
+  - **Beneficio**: Simplificación de la arquitectura, menor consumo de recursos
+  - **Puertos**:
+    - Testing: Apache escucha en 8080 (HOST) → Moodle en 8081 (contenedor)
+    - Production: Apache escucha en 80 (HOST) → Moodle en 8082 (contenedor)
+
+### Agregado
+- **apache/vhost_generator.py**: Nuevo módulo para generación de VirtualHosts
+  - Detección automática de SO (Debian/Ubuntu, RHEL/Rocky, Arch)
+  - Generación de VirtualHosts para Testing y Production
+  - Configuración automática de puertos (Listen 8080)
+  - Habilitación automática de sitios (a2ensite en Debian/Ubuntu)
+  - Recarga automática de Apache tras configuración
+  - Soporte multi-distribución con rutas específicas:
+    - Debian/Ubuntu: `/etc/apache2/sites-available/`
+    - RHEL/Rocky/Arch: `/etc/httpd/conf.d/`
+
+### Modificado
+- **main.py**: Integración del generador de VirtualHosts de Apache
+  - Import de `ApacheVHostGenerator` (línea 24)
+  - Llamada a `apache_gen.generate_all()` durante instalación (línea 159)
+  - Comentarios actualizados indicando eliminación de Nginx (líneas 267, 546)
+
+- **docker/compose_generator.py**: Eliminación de servicios Nginx
+  - Comentario explícito: "Nginx eliminado - Apache corre en el HOST como proxy reverso" (línea 72)
+  - Puertos de Moodle expuestos directamente al HOST:
+    - Testing: `8081:80`
+    - Production: `8082:80`
+  - Simplificación de la configuración de servicios
+
+### Impacto en la Documentación
+- URLs de acceso actualizadas en README.md y QUICKSTART.md
+- Instrucciones de Apache agregadas (systemctl, logs, certificados SSL)
+- Eliminadas referencias a contenedores Nginx
+- Agregadas rutas de configuración de Apache según distribución
+
+### Ventajas de la Migración
+1. **Menor consumo de recursos**: 2 contenedores menos (nginx_testing y nginx_production)
+2. **Gestión simplificada**: Apache se gestiona con systemctl en el HOST
+3. **Logs centralizados**: Logs de Apache en ubicaciones estándar del SO
+4. **Certificados SSL más fáciles**: certbot-apache disponible en todas las distros
+5. **Compatibilidad mejorada**: Apache es estándar en servidores Linux
+
+### Compatibilidad
+- Mantiene compatibilidad total con sistema de backups
+- Sin cambios en bases de datos ni volúmenes de Moodle
+- Migración transparente para instalaciones existentes
+
+---
+
 ## [2024-12-10] - Limpieza y Consolidación de Documentación
 
 ### Eliminado
@@ -117,7 +172,7 @@
 - **Nginx unificado** (`docker/compose_generator.py`, `nginx/config_generator.py`)
   - Consolidado de 2 contenedores a 1 contenedor unificado
   - Menor consumo de recursos y gestión simplificada
-  - Puertos: Testing (8080/8443), Production (80/443)
+  - Puertos: Testing (8081/8443), Production (80/443)
   - Conexión a ambas redes Docker simultáneamente
   - Configuraciones separadas: `testing.conf` y `production.conf`
 

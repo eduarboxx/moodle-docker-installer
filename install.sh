@@ -47,7 +47,7 @@ if command -v dnf &> /dev/null; then
     fi
 fi
 
-# Instalar herramientas necesarias: git y wget
+# Instalar herramientas necesarias: git, wget y Apache
 echo "Verificando herramientas necesarias..."
 TOOLS_TO_INSTALL=""
 
@@ -57,6 +57,27 @@ fi
 
 if ! command -v wget &> /dev/null; then
     TOOLS_TO_INSTALL="$TOOLS_TO_INSTALL wget"
+fi
+
+# Detectar e instalar Apache según el SO
+APACHE_INSTALLED=false
+if command -v apache2 &> /dev/null || command -v httpd &> /dev/null; then
+    echo "Apache ya esta instalado"
+    APACHE_INSTALLED=true
+fi
+
+if [ "$APACHE_INSTALLED" = false ]; then
+    echo "Instalando Apache..."
+    if command -v apt-get &> /dev/null; then
+        # Ubuntu/Debian
+        TOOLS_TO_INSTALL="$TOOLS_TO_INSTALL apache2"
+    elif command -v dnf &> /dev/null; then
+        # Rocky/RHEL/CentOS/Fedora
+        TOOLS_TO_INSTALL="$TOOLS_TO_INSTALL httpd"
+    elif command -v pacman &> /dev/null; then
+        # Arch Linux
+        TOOLS_TO_INSTALL="$TOOLS_TO_INSTALL apache"
+    fi
 fi
 
 if [ -n "$TOOLS_TO_INSTALL" ]; then
@@ -70,7 +91,85 @@ if [ -n "$TOOLS_TO_INSTALL" ]; then
         pacman -S --noconfirm $TOOLS_TO_INSTALL
     fi
 else
-    echo "Git y wget ya estan instalados"
+    echo "Git, wget y Apache ya estan instalados"
+fi
+
+# Habilitar módulos de Apache necesarios
+echo "Habilitando modulos de Apache..."
+if command -v a2enmod &> /dev/null; then
+    # Ubuntu/Debian
+    a2enmod proxy proxy_http headers rewrite ssl 2>/dev/null || true
+    echo "Modulos de Apache habilitados (Debian/Ubuntu)"
+elif command -v httpd &> /dev/null; then
+    # Rocky/RHEL/Arch - los módulos se cargan desde archivos de configuración
+    echo "Modulos de Apache se configuraran automaticamente (RHEL/Arch)"
+fi
+
+# Iniciar y habilitar Apache
+echo "Iniciando Apache..."
+if command -v apache2 &> /dev/null; then
+    # Ubuntu/Debian
+    systemctl enable apache2 2>/dev/null || true
+    systemctl start apache2 2>/dev/null || true
+    echo "Apache (apache2) iniciado y habilitado"
+elif command -v httpd &> /dev/null; then
+    # Rocky/RHEL/Arch
+    systemctl enable httpd 2>/dev/null || true
+    systemctl start httpd 2>/dev/null || true
+    echo "Apache (httpd) iniciado y habilitado"
+fi
+
+# Verificar e instalar cron/cronie (necesario para backups automaticos)
+echo "Verificando instalacion de cron..."
+CRON_INSTALLED=false
+if command -v crontab &> /dev/null; then
+    echo "Cron ya esta instalado"
+    CRON_INSTALLED=true
+fi
+
+if [ "$CRON_INSTALLED" = false ]; then
+    echo "Instalando cron para backups automaticos..."
+    if command -v apt-get &> /dev/null; then
+        # Ubuntu/Debian
+        apt-get install -y cron
+        systemctl enable cron 2>/dev/null || true
+        systemctl start cron 2>/dev/null || true
+        echo "Cron instalado y habilitado"
+    elif command -v dnf &> /dev/null; then
+        # Rocky/RHEL/CentOS/Fedora
+        dnf install -y cronie
+        systemctl enable crond 2>/dev/null || true
+        systemctl start crond 2>/dev/null || true
+        echo "Cronie instalado y habilitado"
+    elif command -v pacman &> /dev/null; then
+        # Arch Linux
+        pacman -S --noconfirm cronie
+        systemctl enable cronie 2>/dev/null || true
+        systemctl start cronie 2>/dev/null || true
+        echo "Cronie instalado y habilitado"
+    else
+        echo "ADVERTENCIA: No se pudo instalar cron automaticamente"
+        echo "Los backups automaticos no estaran disponibles hasta que instales cron manualmente"
+    fi
+else
+    # Verificar que el servicio cron este activo
+    echo "Verificando servicio cron..."
+    if command -v systemctl &> /dev/null; then
+        if systemctl is-active --quiet cron 2>/dev/null; then
+            echo "Servicio cron esta activo"
+        elif systemctl is-active --quiet crond 2>/dev/null; then
+            echo "Servicio crond esta activo"
+        elif systemctl is-active --quiet cronie 2>/dev/null; then
+            echo "Servicio cronie esta activo"
+        else
+            # Intentar iniciar el servicio
+            echo "Iniciando servicio cron..."
+            systemctl start cron 2>/dev/null || \
+            systemctl start crond 2>/dev/null || \
+            systemctl start cronie 2>/dev/null || \
+            echo "ADVERTENCIA: No se pudo iniciar el servicio cron"
+        fi
+    fi
 fi
 
 # Instalar pip si no existe

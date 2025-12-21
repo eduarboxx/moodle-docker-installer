@@ -21,7 +21,7 @@ from core.directory_manager import DirectoryManager
 from core.moodle_downloader import MoodleDownloader
 from docker.compose_generator import ComposeGenerator
 from docker.dockerfile_generator import DockerfileGenerator
-from nginx.config_generator import NginxConfigGenerator
+from apache.vhost_generator import ApacheVHostGenerator
 from config.settings import Settings
 from utils.validator import Validator
 from utils.rollback import RollbackManager
@@ -154,13 +154,14 @@ class MoodleDockerInstaller:
                 return False
             self.logger.success("docker-compose.yml generado")
             
-            # 9. Generar configuraciones Nginx (sin SSL todavia)
-            self.logger.info("Generando configuraciones Nginx...")
-            nginx_gen = NginxConfigGenerator(self.settings)
-            if not nginx_gen.generate_all():
-                self.logger.error("Error al generar configuraciones Nginx")
-                return False
-            self.logger.success("Configuraciones Nginx generadas")
+            # 9. Generar VirtualHosts de Apache
+            self.logger.info("Generando VirtualHosts de Apache...")
+            apache_gen = ApacheVHostGenerator(self.settings)
+            if not apache_gen.generate_all():
+                self.logger.error("Error al generar VirtualHosts de Apache")
+                self.logger.warning("Puedes configurar Apache manualmente si es necesario")
+            else:
+                self.logger.success("VirtualHosts de Apache generados y configurados")
 
             # 10. Preguntar que ambiente levantar
             print("\nQue ambiente deseas levantar?")
@@ -185,16 +186,65 @@ class MoodleDockerInstaller:
                 else:
                     self.logger.success(f"Ambiente {env.capitalize()} iniciado")
 
-            # 12. Configurar SSL solo para los ambientes levantados
-            for env in environments_to_start:
-                self.logger.info(f"Configurando SSL para {env.capitalize()}...")
-                if not nginx_gen.setup_ssl_for_environment(env):
-                    self.logger.error(f"Error al configurar SSL para {env.capitalize()}")
-                else:
-                    self.logger.success(f"SSL configurado para {env.capitalize()}")
+            # 11b. Mostrar instrucciones de instalacion web
+            if environments_to_start:
+                print("\n" + "="*60)
+                print("INSTALACION WEB REQUERIDA")
+                print("="*60)
+                print("\nLos contenedores se han iniciado con Apache como proxy reverso.")
+                print("Por favor, accede a las siguientes URLs para completar la instalacion de Moodle:")
 
-                    # Aplicar configuracion SSL a Moodle si el contenedor esta corriendo
-                    self._apply_ssl_to_moodle(env)
+                import socket
+                def get_local_ip():
+                    try:
+                        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                        s.connect(("8.8.8.8", 80))
+                        ip = s.getsockname()[0]
+                        s.close()
+                        return ip
+                    except:
+                        return "localhost"
+
+                host_ip = get_local_ip()
+
+                print("\n" + "="*65)
+                print("  AMBIENTES INICIADOS - ACCESO Y CREDENCIALES")
+                print("="*65)
+
+                for env in environments_to_start:
+                    if env == 'testing':
+                        print(f"\nAMBIENTE TESTING:")
+                        print(f"  URL Apache: http://localhost:8081")
+                        print(f"  URL Red:    http://{host_ip}:8081")
+                        print(f"  URL Docker: http://localhost:8081 (directo)")
+                        print(f"\n  Base de Datos:")
+                        print(f"    Type: mysqli")
+                        print(f"    Host: mysql_testing")
+                        print(f"    Name: {self.settings.get_env_var('TEST_DB_NAME')}")
+                        print(f"    User: {self.settings.get_env_var('TEST_DB_USER')}")
+                        print(f"    Pass: {self.settings.get_env_var('TEST_DB_PASS')}")
+                        print(f"    Port: 3306")
+                    else:  # production
+                        print(f"\nAMBIENTE PRODUCTION:")
+                        print(f"  URL Apache: http://localhost")
+                        print(f"  URL Red:    http://{host_ip}")
+                        print(f"  URL Docker: http://localhost:8082 (directo)")
+                        print(f"\n  Base de Datos:")
+                        print(f"    Type: mysqli")
+                        print(f"    Host: mysql_production")
+                        print(f"    Name: {self.settings.get_env_var('PROD_DB_NAME')}")
+                        print(f"    User: {self.settings.get_env_var('PROD_DB_USER')}")
+                        print(f"    Pass: {self.settings.get_env_var('PROD_DB_PASS')}")
+                        print(f"    Port: 3306")
+
+                print("\n" + "="*65)
+                print("IMPORTANTE: Completa la instalacion web de Moodle")
+                print("="*65)
+                print("1. Accede a la URL mostrada arriba en tu navegador")
+                print("2. Durante la instalacion, usa las credenciales mostradas")
+                print("3. El Database Host debe ser 'mysql_testing' o 'mysql_production' - depende del ambiente que levantaste")
+                print("="*65)
+                input("\nPresiona Enter para continuar...")
             
             # Configurar backups automaticos
             self._setup_automatic_backups()
@@ -214,10 +264,10 @@ class MoodleDockerInstaller:
     def _start_environment(self, env_name):
         """Inicia un ambiente especifico"""
         try:
-            # Map environment to specific services
+            # Map environment to specific services (nginx eliminado - Apache corre en el HOST)
             services_map = {
-                'testing': 'mysql_testing moodle_testing nginx',
-                'production': 'mysql_production moodle_production nginx'
+                'testing': 'mysql_testing moodle_testing',
+                'production': 'mysql_production moodle_production'
             }
 
             services = services_map.get(env_name, env_name)
@@ -375,23 +425,59 @@ class MoodleDockerInstaller:
 Ruta de instalacion: {self.settings.BASE_PATH}
 Version de Moodle: {self.settings.MOODLE_VERSION}
 
-AMBIENTE TESTING:
-Acceso: {test_access}
-Puerto HTTP: {self.settings.get_env_var('TEST_HTTP_PORT')}
-Puerto HTTPS: {self.settings.get_env_var('TEST_HTTPS_PORT')}
+===============================================================
+                    AMBIENTE TESTING
+===============================================================
 
-AMBIENTE PRODUCCION:
-Acceso: {prod_access}
-Puerto HTTP: {self.settings.get_env_var('PROD_HTTP_PORT')}
-Puerto HTTPS: {self.settings.get_env_var('PROD_HTTPS_PORT')}
+URL de Acceso:
+  - {test_access}
+  - http://localhost:8081
 
-CREDENCIALES:
-Las credenciales se encuentran en: {self.settings.BASE_PATH}/.env
+Credenciales Base de Datos:
+  Database Type:     mysqli
+  Database Host:     mysql_testing
+  Database Name:     {self.settings.get_env_var('TEST_DB_NAME')}
+  Database User:     {self.settings.get_env_var('TEST_DB_USER')}
+  Database Password: {self.settings.get_env_var('TEST_DB_PASS')}
+  Database Port:     3306
+
+Credenciales Administrador Moodle:
+  Username:          {self.settings.get_env_var('TEST_MOODLE_ADMIN_USER')}
+  Password:          {self.settings.get_env_var('TEST_MOODLE_ADMIN_PASS')}
+  Email:             {self.settings.get_env_var('TEST_MOODLE_ADMIN_EMAIL')}
+
+===============================================================
+                    AMBIENTE PRODUCCION
+===============================================================
+
+URL de Acceso:
+  - {prod_access}
+  - http://localhost
+
+Credenciales Base de Datos:
+  Database Type:     mysqli
+  Database Host:     mysql_production
+  Database Name:     {self.settings.get_env_var('PROD_DB_NAME')}
+  Database User:     {self.settings.get_env_var('PROD_DB_USER')}
+  Database Password: {self.settings.get_env_var('PROD_DB_PASS')}
+  Database Port:     3306
+
+Credenciales Administrador Moodle:
+  Username:          {self.settings.get_env_var('PROD_MOODLE_ADMIN_USER')}
+  Password:          {self.settings.get_env_var('PROD_MOODLE_ADMIN_PASS')}
+  Email:             {self.settings.get_env_var('PROD_MOODLE_ADMIN_EMAIL')}
+
+===============================================================
+
+ARCHIVO DE CREDENCIALES:
+  Todas las credenciales estan en: {self.settings.BASE_PATH}/.env
 
 PROXIMOS PASOS:
-1. Revisar el archivo .env y ajustar las URLs si es necesario
-2. Acceder a las URLs mostradas arriba para completar la configuracion de Moodle
-3. (Opcional) Configurar DNS/hosts si deseas usar nombres de dominio personalizados
+1. Acceder a las URLs mostradas arriba
+2. Completar el instalador web de Moodle usando las credenciales de arriba
+3. IMPORTANTE: Durante la instalacion, el Database Host  
+   debe ser 'mysql_testing' o 'mysql_production' - depende del ambiente que levantaste
+4. (Opcional) Configurar DNS/hosts si deseas usar nombres de dominio
 
 ===============================================================
         """
@@ -457,9 +543,7 @@ PROXIMOS PASOS:
             }
             target = services_map.get(env, env)
 
-            # Si es 'up', incluir nginx; si es 'down', solo detener servicios del ambiente
-            if action == 'up':
-                target += ' nginx'
+            # Nginx eliminado - Apache corre en el HOST
 
             result = DockerComposeWrapper.run_compose_shell(
                 f"{actions_map[action]} {target}",
@@ -480,36 +564,13 @@ PROXIMOS PASOS:
             self.logger.error(f"Error: {str(e)}")
 
     def _check_and_setup_ssl(self, environment):
-        """Verifica y configura SSL si no existe para un ambiente"""
-        import os
-
-        try:
-            ssl_cert_path = os.path.join(
-                self.settings.NGINX_PATH,
-                'ssl',
-                f'{environment}.crt'
-            )
-
-            # Verificar si ya existe certificado SSL
-            if os.path.exists(ssl_cert_path):
-                self.logger.info(f"SSL ya configurado para {environment}")
-                return
-
-            # Configurar SSL
-            self.logger.info(f"Configurando SSL para {environment}...")
-            from nginx.config_generator import NginxConfigGenerator
-            nginx_gen = NginxConfigGenerator(self.settings)
-
-            if nginx_gen.setup_ssl_for_environment(environment):
-                self.logger.success(f"SSL configurado exitosamente para {environment}")
-
-                # Aplicar configuracion SSL a Moodle
-                self._apply_ssl_to_moodle(environment)
-            else:
-                self.logger.warning(f"No se pudo configurar SSL para {environment}")
-
-        except Exception as e:
-            self.logger.warning(f"Error verificando SSL para {environment}: {str(e)}")
+        """
+        DEPRECATED: SSL ahora se configura con Certbot en Apache (HOST)
+        Para configurar SSL usar: sudo certbot --apache -d tusitio.com
+        """
+        # SSL configuration moved to Apache with Certbot
+        # No automatic SSL setup - user must run certbot manually
+        pass
     
     def _show_services_status(self):
         """Muestra el estado de los servicios"""
@@ -536,10 +597,12 @@ PROXIMOS PASOS:
   2. Logs de Produccion (todos los servicios)
   3. Logs de Testing - Solo Moodle
   4. Logs de Testing - Solo MySQL
-  5. Logs de Testing - Solo Nginx
-  6. Logs de Produccion - Solo Moodle
-  7. Logs de Produccion - Solo MySQL
-  8. Logs de Produccion - Solo Nginx
+  5. Logs de Produccion - Solo Moodle
+  6. Logs de Produccion - Solo MySQL
+
+  NOTA: Para logs de Apache usar:
+    - Testing: sudo tail -f /var/log/apache2/moodle-testing-error.log
+    - Production: sudo tail -f /var/log/apache2/moodle-production-error.log
 
   0. Volver al menu principal
 
@@ -559,13 +622,9 @@ PROXIMOS PASOS:
             elif choice == '4':
                 self._show_logs('testing', 'mysql_testing')
             elif choice == '5':
-                self._show_logs('testing', 'nginx_testing')
-            elif choice == '6':
                 self._show_logs('production', 'moodle_production')
-            elif choice == '7':
+            elif choice == '6':
                 self._show_logs('production', 'mysql_production')
-            elif choice == '8':
-                self._show_logs('production', 'nginx_production')
             else:
                 print("Opcion invalida")
     
@@ -714,23 +773,63 @@ PROXIMOS PASOS:
         """Configura backup automatico"""
         print(f"\n=== Configurar Backup Automatico para {environment.upper()} ===")
 
-        # Mostrar horarios recomendados
-        schedules = scheduler.get_recommended_schedules()
+        # Verificar que crontab esté disponible
+        import shutil
+        if not shutil.which('crontab'):
+            self.logger.error("El comando 'crontab' no está disponible en el sistema")
+            self.logger.info("Instala cron/cronie según tu distribución:")
+            self.logger.info("  - Ubuntu/Debian: sudo apt install cron")
+            self.logger.info("  - Rocky/RHEL:    sudo yum install cronie")
+            self.logger.info("  - Arch Linux:    sudo pacman -S cronie")
+            input("\nPresiona Enter para continuar...")
+            return
 
-        print("\nIngresa la expresion cron o selecciona una opcion:")
-        print("Ejemplos de expresiones cron:")
-        print("  0 2 * * *     -> Diario a las 2:00 AM")
-        print("  0 3 * * 0     -> Semanal los domingos a las 3:00 AM")
-        print("  0 */6 * * *   -> Cada 6 horas")
+        # Definir horarios disponibles
+        schedules = {
+            '1': {'cron': '0 2 * * *', 'desc': 'Diario a las 2:00 AM'},
+            '2': {'cron': '0 3 * * *', 'desc': 'Diario a las 3:00 AM'},
+            '3': {'cron': '0 2 * * 0', 'desc': 'Semanal los domingos a las 2:00 AM'},
+            '4': {'cron': '0 2,14 * * *', 'desc': 'Dos veces al día (2:00 AM y 2:00 PM)'},
+            '5': {'cron': '0 */6 * * *', 'desc': 'Cada 6 horas'},
+            '6': {'cron': '0 0 * * *', 'desc': 'Diario a la medianoche'},
+        }
 
-        schedule = input("\nExpresion cron [0 2 * * *]: ").strip()
-        if not schedule:
+        print("\nSelecciona el horario para el backup automatico:")
+        print("-" * 70)
+        for key, value in schedules.items():
+            print(f"  {key}. {value['desc']:40s} ({value['cron']})")
+        print(f"  7. Expresion cron personalizada")
+        print("-" * 70)
+
+        choice = input("\nSelecciona una opcion [1]: ").strip()
+
+        # Default a opción 1
+        if not choice:
+            choice = '1'
+
+        # Obtener expresión cron
+        if choice in schedules:
+            schedule = schedules[choice]['cron']
+            description = schedules[choice]['desc']
+            print(f"\nHorario seleccionado: {description}")
+        elif choice == '7':
+            print("\nIngresa la expresion cron personalizada:")
+            print("Formato: minuto hora dia mes dia_semana")
+            print("Ejemplo: 0 2 * * * (diario a las 2 AM)")
+            schedule = input("\nExpresion cron: ").strip()
+            if not schedule:
+                print("Expresion invalida, usando default: 0 2 * * *")
+                schedule = '0 2 * * *'
+            description = "Horario personalizado"
+        else:
+            print("Opcion invalida, usando default: Diario a las 2:00 AM")
             schedule = '0 2 * * *'
+            description = "Diario a las 2:00 AM"
 
         self.logger.info(f"Configurando backup automatico para {environment}")
         if scheduler.setup_cron(environment, schedule):
             self.logger.success(f"Backup automatico configurado para {environment}")
-            print(f"\nEl backup se ejecutara: {schedule}")
+            print(f"\nHorario: {description} ({schedule})")
         else:
             self.logger.error("Error al configurar backup automatico")
 
@@ -1036,7 +1135,7 @@ PROXIMOS PASOS:
         print("DESINSTALACION COMPLETA")
         print("="*60)
         print("\nEsta accion eliminara:")
-        print("- TODOS los contenedores Docker (Testing + Produccion + Nginx)")
+        print("- TODOS los contenedores Docker (Testing + Produccion)")
         print("- TODOS los volumenes y datos")
         print("- La estructura completa en /opt/docker-project")
         print("- Todos los archivos de configuracion")

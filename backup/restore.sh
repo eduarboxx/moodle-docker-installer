@@ -3,12 +3,42 @@
 ###############################################################################
 # Script de Restauración de Respaldos para Moodle en Docker
 # Restaura: Base de datos MySQL + moodledata
+# Formatos soportados: .sql.gz (comprimido) y .sql (sin comprimir)
 # Autor: Eduardo Valdés
 ###############################################################################
 
 # Configuración de variables
 ENVIRONMENT="${1}"
 BACKUP_TIMESTAMP="${2}"
+
+# Cargar variables desde .env si las variables no están definidas
+if [ -z "$BACKUP_BASE_PATH" ] || [ -z "$DB_NAME" ]; then
+    ENV_FILE="${ENV_FILE:-/opt/docker-project/.env}"
+
+    if [ -f "$ENV_FILE" ]; then
+        # Cargar todas las variables del .env
+        set -a
+        source "$ENV_FILE"
+        set +a
+
+        # Establecer variables específicas según el ambiente
+        if [ "$ENVIRONMENT" = "production" ]; then
+            DB_NAME="${PROD_DB_NAME}"
+            DB_USER="${PROD_DB_USER}"
+            DB_PASS="${PROD_DB_PASS}"
+            DB_ROOT_PASS="${PROD_DB_ROOT_PASS}"
+        else
+            DB_NAME="${TEST_DB_NAME}"
+            DB_USER="${TEST_DB_USER}"
+            DB_PASS="${TEST_DB_PASS}"
+            DB_ROOT_PASS="${TEST_DB_ROOT_PASS}"
+        fi
+    else
+        echo "ADVERTENCIA: No se encontró archivo .env en $ENV_FILE"
+        echo "Las variables deben estar definidas en el entorno"
+    fi
+fi
+
 BASE_BACKUP_DIR="${BACKUP_BASE_PATH:-/opt/docker-project/backups}"
 BACKUP_DIR="$BASE_BACKUP_DIR/$ENVIRONMENT/$BACKUP_TIMESTAMP"
 
@@ -96,6 +126,14 @@ list_available_backups() {
 # Confirmación del usuario
 ###############################################################################
 confirm_restore() {
+    # Si SKIP_CONFIRMATION está configurada, saltar la confirmación
+    # (la confirmación ya fue hecha en la interfaz de Python)
+    if [ "${SKIP_CONFIRMATION}" = "yes" ]; then
+        log_info "Confirmación omitida (ya confirmado previamente)"
+        log_success "Iniciando restauración..."
+        return 0
+    fi
+
     log_warning "=========================================="
     log_warning "ADVERTENCIA: RESTAURACIÓN DE RESPALDO"
     log_warning "=========================================="
@@ -156,15 +194,26 @@ start_services() {
 restore_mysql_database() {
     log_info "Restaurando base de datos MySQL..."
 
-    # Buscar archivo SQL comprimido
+    # Buscar archivo SQL (primero comprimido, luego sin comprimir)
     local sql_file=$(find "$BACKUP_DIR" -name "*.sql.gz" | head -n 1)
+    local is_compressed=true
 
     if [ -z "$sql_file" ]; then
-        log_error "No se encontró archivo SQL en el backup"
+        # Si no hay archivo comprimido, buscar archivo .sql sin comprimir
+        sql_file=$(find "$BACKUP_DIR" -name "*.sql" | head -n 1)
+        is_compressed=false
+    fi
+
+    if [ -z "$sql_file" ]; then
+        log_error "No se encontró archivo SQL en el backup (buscado: *.sql.gz, *.sql)"
         return 1
     fi
 
-    log_info "Archivo encontrado: $(basename $sql_file)"
+    if [ "$is_compressed" = true ]; then
+        log_info "Archivo encontrado (comprimido): $(basename $sql_file)"
+    else
+        log_info "Archivo encontrado (sin comprimir): $(basename $sql_file)"
+    fi
 
     # Verificar que el contenedor MySQL esté corriendo
     if ! docker ps | grep -q "$MYSQL_CONTAINER"; then
@@ -176,13 +225,22 @@ restore_mysql_database() {
     local db_user="root"
     local db_pass="${DB_ROOT_PASS}"
 
-    # Descomprimir y restaurar
-    log_info "Descomprimiendo y restaurando base de datos..."
-
-    gunzip -c "$sql_file" | docker exec -i "$MYSQL_CONTAINER" mysql \
-        -u"$db_user" \
-        -p"$db_pass" \
-        "$db_name" 2>> "$LOG_FILE"
+    # Restaurar según el formato
+    if [ "$is_compressed" = true ]; then
+        # Descomprimir, filtrar warnings y restaurar
+        log_info "Descomprimiendo y restaurando base de datos..."
+        gunzip -c "$sql_file" | grep -v "^mysqldump:" | grep -v "^mysql:" | docker exec -i "$MYSQL_CONTAINER" mysql \
+            -u"$db_user" \
+            -p"$db_pass" \
+            "$db_name" 2>> "$LOG_FILE"
+    else
+        # Filtrar warnings de mysqldump que puedan estar en el archivo y restaurar
+        log_info "Restaurando base de datos..."
+        grep -v "^mysqldump:" "$sql_file" | grep -v "^mysql:" | docker exec -i "$MYSQL_CONTAINER" mysql \
+            -u"$db_user" \
+            -p"$db_pass" \
+            "$db_name" 2>> "$LOG_FILE"
+    fi
 
     if [ $? -eq 0 ]; then
         log_success "Base de datos restaurada correctamente"

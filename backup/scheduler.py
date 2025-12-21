@@ -35,6 +35,16 @@ class BackupScheduler:
     def _write_crontab(self, content):
         """Escribe el contenido al crontab"""
         try:
+            # Verificar que crontab esté disponible
+            import shutil
+            if not shutil.which('crontab'):
+                print("Error: El comando 'crontab' no está disponible")
+                print("Instala cron/cronie según tu distribución:")
+                print("  - Ubuntu/Debian: sudo apt install cron")
+                print("  - Rocky/RHEL:    sudo yum install cronie")
+                print("  - Arch Linux:    sudo pacman -S cronie")
+                return False
+
             # Crear archivo temporal
             with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
                 f.write(content)
@@ -50,37 +60,27 @@ class BackupScheduler:
             # Eliminar archivo temporal
             os.unlink(temp_file)
 
+            if result.returncode != 0 and result.stderr:
+                print(f"Error de crontab: {result.stderr}")
+
             return result.returncode == 0
+        except FileNotFoundError:
+            print("Error: El comando 'crontab' no está disponible")
+            print("Instala cron/cronie según tu distribución")
+            return False
         except Exception as e:
             print(f"Error escribiendo crontab: {str(e)}")
             return False
 
-    def _get_env_exports(self, environment):
-        """Genera las variables de entorno necesarias para el cron"""
-        env_prefix = 'TEST' if environment == 'testing' else 'PROD'
+    def _get_env_file_path(self):
+        """Obtiene la ruta al archivo .env"""
+        # Buscar el .env en el directorio base del proyecto
+        env_file = os.path.join(self.settings.BASE_PATH, '.env')
+        if os.path.exists(env_file):
+            return env_file
 
-        exports = [
-            f"export BACKUP_BASE_PATH='{self.settings.BACKUPS_PATH}'",
-            f"export BACKUP_RETENTION_DAYS='{self.settings.BACKUP_RETENTION_DAYS}'",
-            f"export DB_NAME='{self.settings.get_env_var(f'{env_prefix}_DB_NAME')}'",
-            f"export DB_USER='{self.settings.get_env_var(f'{env_prefix}_DB_USER')}'",
-            f"export DB_PASS='{self.settings.get_env_var(f'{env_prefix}_DB_PASS')}'",
-            f"export DB_ROOT_PASS='{self.settings.get_env_var(f'{env_prefix}_DB_ROOT_PASS')}'",
-        ]
-
-        # Agregar variables de email si están configuradas
-        if self.settings.BACKUP_EMAIL_TO:
-            exports.append(f"export BACKUP_EMAIL_TO='{self.settings.BACKUP_EMAIL_TO}'")
-        if self.settings.SMTP_USER:
-            exports.append(f"export SMTP_USER='{self.settings.SMTP_USER}'")
-        if self.settings.SMTP_PASSWORD:
-            exports.append(f"export SMTP_PASSWORD='{self.settings.SMTP_PASSWORD}'")
-        if self.settings.SMTP_SERVER:
-            exports.append(f"export SMTP_SERVER='{self.settings.SMTP_SERVER}'")
-        if self.settings.SMTP_PORT:
-            exports.append(f"export SMTP_PORT='{self.settings.SMTP_PORT}'")
-
-        return ' && '.join(exports)
+        # Fallback: usar la ruta por defecto
+        return '/opt/docker-project/.env'
 
     def setup_cron(self, environment='testing', schedule='0 2 * * *'):
         """
@@ -107,19 +107,20 @@ class BackupScheduler:
         job_id = f"moodle-backup-{environment}"
 
         # Eliminar entrada anterior si existe
-        lines = current_crontab.split('\n')
-        new_lines = [line for line in lines if job_id not in line]
+        lines = current_crontab.split('\n') if current_crontab else []
+        # Filtrar líneas vacías y la entrada anterior
+        new_lines = [line for line in lines if line.strip() and job_id not in line]
 
-        # Preparar comando con exports
-        env_exports = self._get_env_exports(environment)
-        command = f"{env_exports} && bash {self.backup_script} {environment}"
+        # Preparar comando con ruta al archivo .env
+        env_file = self._get_env_file_path()
+        command = f"ENV_FILE='{env_file}' bash {self.backup_script} {environment}"
 
         # Agregar nueva entrada
         new_entry = f"{schedule} {command} # {job_id}"
         new_lines.append(new_entry)
 
-        # Escribir nuevo crontab
-        new_crontab = '\n'.join(new_lines)
+        # Escribir nuevo crontab (debe terminar con newline)
+        new_crontab = '\n'.join(new_lines) + '\n'
 
         if self._write_crontab(new_crontab):
             print(f"Backup automatico configurado exitosamente para {environment}")
@@ -151,17 +152,18 @@ class BackupScheduler:
         # Identificador único para esta tarea
         job_id = f"moodle-backup-{environment}"
 
-        # Filtrar líneas que no contengan el job_id
+        # Filtrar líneas que no contengan el job_id y líneas vacías
         lines = current_crontab.split('\n')
-        new_lines = [line for line in lines if job_id not in line]
+        new_lines = [line for line in lines if line.strip() and job_id not in line]
 
         # Verificar si se eliminó algo
-        if len(lines) == len(new_lines):
+        original_jobs = [line for line in lines if job_id in line]
+        if not original_jobs:
             print(f"No hay backup automatico configurado para {environment}")
             return True
 
-        # Escribir nuevo crontab
-        new_crontab = '\n'.join(new_lines)
+        # Escribir nuevo crontab (debe terminar con newline si no está vacío)
+        new_crontab = '\n'.join(new_lines) + '\n' if new_lines else ''
 
         if self._write_crontab(new_crontab):
             print(f"Backup automatico de {environment} eliminado exitosamente")
@@ -202,40 +204,3 @@ class BackupScheduler:
             print(f"Error listando tareas: {str(e)}")
             return False
 
-    def get_recommended_schedules(self):
-        """
-        Muestra horarios recomendados para backups
-
-        Returns:
-            Dict con horarios recomendados
-        """
-        schedules = {
-            'daily_2am': {
-                'cron': '0 2 * * *',
-                'description': 'Diario a las 2:00 AM'
-            },
-            'daily_3am': {
-                'cron': '0 3 * * *',
-                'description': 'Diario a las 3:00 AM'
-            },
-            'weekly_sunday': {
-                'cron': '0 2 * * 0',
-                'description': 'Semanal los domingos a las 2:00 AM'
-            },
-            'twice_daily': {
-                'cron': '0 2,14 * * *',
-                'description': 'Dos veces al día (2:00 AM y 2:00 PM)'
-            },
-            'every_6_hours': {
-                'cron': '0 */6 * * *',
-                'description': 'Cada 6 horas'
-            }
-        }
-
-        print("\nHorarios recomendados para backups:")
-        print("-" * 80)
-        for key, value in schedules.items():
-            print(f"  {key:20s} -> {value['cron']:15s} ({value['description']})")
-        print("-" * 80)
-
-        return schedules
